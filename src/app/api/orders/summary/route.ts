@@ -1,9 +1,13 @@
 import { ItemCategory } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { ensureAdmin } from "@/lib/api-auth";
 import { db } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/categories";
 
 export async function GET(request: Request) {
+  const unauthorized = await ensureAdmin();
+  if (unauthorized) return unauthorized;
+
   const { searchParams } = new URL(request.url);
   const date = searchParams.get("date");
 

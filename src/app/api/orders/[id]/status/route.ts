@@ -1,6 +1,7 @@
 import { ItemStatus, OrderStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { publishSse } from "@/lib/sse";
 import { statusUpdateSchema } from "@/lib/validations";
 
 type Context = { params: Promise<{ id: string }> };
@@ -31,6 +32,7 @@ export async function PATCH(request: Request, context: Context) {
         : undefined,
     },
   });
+  publishSse({ type: "order.changed", orderId: order.id, ts: Date.now() });
 
   return NextResponse.json(order);
 }

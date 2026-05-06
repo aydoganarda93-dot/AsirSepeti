@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 
-export function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const isAdminPath = request.nextUrl.pathname.startsWith("/admin");
   if (!isAdminPath) return NextResponse.next();
 
-  const authToken = request.cookies.get("next-auth.session-token")?.value;
-  if (authToken) return NextResponse.next();
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+  if (token) return NextResponse.next();
 
-  const loginUrl = new URL("/api/auth/signin", request.url);
+  const loginUrl = new URL("/giris", request.url);
   return NextResponse.redirect(loginUrl);
 }
 

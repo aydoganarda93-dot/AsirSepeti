@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { ItemCategory } from "@prisma/client";
+import { ensureAdmin } from "@/lib/api-auth";
 import { db } from "@/lib/db";
+import { publishSse } from "@/lib/sse";
 import { updateOrderSchema } from "@/lib/validations";
 
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(_: Request, context: Context) {
+  const unauthorized = await ensureAdmin();
+  if (unauthorized) return unauthorized;
+
   const { id } = await context.params;
   const order = await db.order.findUnique({
     where: { id },
@@ -16,6 +21,9 @@ export async function GET(_: Request, context: Context) {
 }
 
 export async function PATCH(request: Request, context: Context) {
+  const unauthorized = await ensureAdmin();
+  if (unauthorized) return unauthorized;
+
   const { id } = await context.params;
   const body = await request.json();
   const parsed = updateOrderSchema.safeParse(body);
@@ -41,11 +49,16 @@ export async function PATCH(request: Request, context: Context) {
     },
     include: { company: true, items: true },
   });
+  publishSse({ type: "order.changed", orderId: order.id, ts: Date.now() });
   return NextResponse.json(order);
 }
 
 export async function DELETE(_: Request, context: Context) {
+  const unauthorized = await ensureAdmin();
+  if (unauthorized) return unauthorized;
+
   const { id } = await context.params;
   await db.order.delete({ where: { id } });
+  publishSse({ type: "order.deleted", orderId: id, ts: Date.now() });
   return NextResponse.json({ ok: true });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { ItemCategory } from "@prisma/client";
+import { useQuery } from "@tanstack/react-query";
 import { addDays, format } from "date-fns";
 import { tr } from "date-fns/locale";
 import { useRouter } from "next/navigation";
@@ -19,7 +20,16 @@ type FormValues = {
 export default function Home() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState("");
+  const [customCompany, setCustomCompany] = useState("");
   const minDate = format(addDays(new Date(), 2), "yyyy-MM-dd", { locale: tr });
+  const companiesQuery = useQuery({
+    queryKey: ["public-companies"],
+    queryFn: async () =>
+      (await (await fetch("/api/companies")).json()) as Array<{ id: string; name: string }>,
+    refetchOnWindowFocus: false,
+  });
+
   const form = useForm<FormValues>({
     defaultValues: {
       companyName: "",
@@ -40,10 +50,14 @@ export default function Home() {
 
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitting(true);
+    const payload =
+      selectedCompany && selectedCompany !== "OTHER"
+        ? { ...values, companyId: selectedCompany, companyName: undefined }
+        : { ...values, companyName: customCompany || values.companyName };
     const response = await fetch("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
+      body: JSON.stringify(payload),
     });
     setSubmitting(false);
     if (!response.ok) return;
@@ -55,7 +69,23 @@ export default function Home() {
     <main className="mx-auto max-w-2xl p-4 md:p-8">
       <h1 className="mb-4 text-2xl font-bold">Catering Sipariş Formu</h1>
       <form onSubmit={onSubmit} className="space-y-4 rounded-lg border bg-white p-4">
-        <input className="w-full rounded border p-2" placeholder="Firma Adı" {...form.register("companyName")} />
+        <select className="w-full rounded border p-2" value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)}>
+          <option value="">Firma seçiniz</option>
+          {(companiesQuery.data ?? []).map((company) => (
+            <option key={company.id} value={company.id}>
+              {company.name}
+            </option>
+          ))}
+          <option value="OTHER">Diğer</option>
+        </select>
+        {selectedCompany === "OTHER" || !selectedCompany ? (
+          <input
+            className="w-full rounded border p-2"
+            placeholder="Firma Adı (Diğer)"
+            value={customCompany}
+            onChange={(e) => setCustomCompany(e.target.value)}
+          />
+        ) : null}
         <input className="w-full rounded border p-2" placeholder="İletişim Kişisi" {...form.register("contactName")} />
         <input type="date" min={minDate} className="w-full rounded border p-2" {...form.register("orderDate")} />
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">

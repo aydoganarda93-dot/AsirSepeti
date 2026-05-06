@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ensureAdmin } from "@/lib/api-auth";
 import { db } from "@/lib/db";
 import { companyCreateSchema } from "@/lib/validations";
 
@@ -10,6 +11,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await ensureAdmin();
+  if (unauthorized) return unauthorized;
+
   const body = await request.json();
   const parsed = companyCreateSchema.safeParse(body);
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { subscribeSse } from "@/lib/sse";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,12 @@ export async function GET() {
 
       send("connected", { ok: true, ts: Date.now() });
       const timer = setInterval(() => send("ping", { ts: Date.now() }), 15000);
+      const unsubscribe = subscribeSse((payload) => send("update", payload));
 
-      return () => clearInterval(timer);
+      return () => {
+        clearInterval(timer);
+        unsubscribe();
+      };
     },
   });
 

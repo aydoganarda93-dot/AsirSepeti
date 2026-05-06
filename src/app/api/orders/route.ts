@@ -1,7 +1,9 @@
 import { ItemCategory } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { ensureAdmin } from "@/lib/api-auth";
 import { db } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/categories";
+import { publishSse } from "@/lib/sse";
 import { assertOrderDateWindow, createOrderSchema } from "@/lib/validations";
 
 function toItems(quantities: Record<ItemCategory, number>) {
@@ -12,8 +14,14 @@ function toItems(quantities: Record<ItemCategory, number>) {
 }
 
 export async function GET(request: Request) {
+  const unauthorized = await ensureAdmin();
+  if (unauthorized) return unauthorized;
+
   const { searchParams } = new URL(request.url);
   const date = searchParams.get("date");
+  const companyId = searchParams.get("companyId");
+  const hasNotes = searchParams.get("hasNotes");
+  const category = searchParams.get("category");
 
   if (!date) {
     return NextResponse.json({ error: "Tarih zorunludur." }, { status: 400 });
@@ -21,7 +29,12 @@ export async function GET(request: Request) {
 
   const target = new Date(date);
   const orders = await db.order.findMany({
-    where: { orderDate: target },
+    where: {
+      orderDate: target,
+      companyId: companyId ?? undefined,
+      notes: hasNotes === "true" ? { not: null } : undefined,
+      items: category ? { some: { category: category as ItemCategory } } : undefined,
+    },
     include: { company: true, items: true },
     orderBy: { company: { name: "asc" } },
   });
@@ -81,6 +94,7 @@ export async function POST(request: Request) {
       items: true,
     },
   });
+  publishSse({ type: "order.changed", orderId: order.id, ts: Date.now() });
 
   return NextResponse.json(order, { status: 201 });
 }

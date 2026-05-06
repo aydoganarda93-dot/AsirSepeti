@@ -20,14 +20,19 @@ export const categoryQuantitiesSchema = z
     "En az bir kategoride adet 1 veya daha fazla olmalıdır.",
   );
 
-export const createOrderSchema = z.object({
-  companyId: z.string().uuid().optional(),
-  companyName: z.string().min(2).max(120).optional(),
-  contactName: z.string().min(2).max(120),
-  orderDate: z.string().date(),
-  notes: z.string().max(2000).optional(),
-  quantities: categoryQuantitiesSchema,
-});
+export const createOrderSchema = z
+  .object({
+    companyId: z.string().uuid().optional(),
+    companyName: z.string().min(2).max(120).optional(),
+    contactName: z.string().min(2).max(120),
+    orderDate: z.string().date(),
+    notes: z.string().max(2000).optional(),
+    quantities: categoryQuantitiesSchema,
+  })
+  .refine((value) => Boolean(value.companyId || value.companyName), {
+    message: "Firma seçimi veya firma adı zorunludur.",
+    path: ["companyName"],
+  });
 
 export const updateOrderSchema = z.object({
   contactName: z.string().min(2).max(120).optional(),
