@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  orders    Order[]
+
+  @@index([name])
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  companyId   String
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderDate   DateTime    @db.Date
+  contactName String
+  notes       String?     @db.Text
+  status      OrderStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  items       OrderItem[]
+
+  @@unique([companyId, orderDate])
+  @@index([orderDate])
+  @@index([status])
+  @@index([companyId, orderDate])
+}
+
+model OrderItem {
+  id        String       @id @default(uuid())
+  orderId   String
+  order     Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  category  ItemCategory
+  quantity  Int
+  status    ItemStatus   @default(PENDING)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([orderId])
+  @@index([category])
+  @@index([status])
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  DELIVERED
+}
+
+enum ItemStatus {
+  PENDING
+  PREPARING
+  READY
+}
+
+enum ItemCategory {
+  OGLEN_YEMEGI
+  KAPALI_KAP
+  SEFERTASI
+  SALATA
+  KUMANYA
+  TATLI
+  EKMEK_ARASI
+}

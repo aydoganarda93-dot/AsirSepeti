@@ -1,0 +1,9 @@
+# Project Rules
+- Use TypeScript strict mode. Never use `any`.
+- Use Prisma for all database operations. Never write raw SQL unless aggregating.
+- All API routes must validate with Zod before processing.
+- All server actions must revalidatePath() after mutations.
+- Use Server-Sent Events (SSE) for real-time kitchen updates, not WebSocket.
+- Thermal label CSS must be 80mm width (302px), monochrome, barcode-friendly.
+- Turkish UI labels only. Code comments in English.
+- Use `useCallback` and `useMemo` in kitchen monitor components to prevent re-renders.
