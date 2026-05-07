@@ -56,10 +56,10 @@ export async function POST(request: Request) {
     input.companyId
       ? await db.company.findUnique({ where: { id: input.companyId } })
       : await db.company.upsert({
-          where: { name: input.companyName ?? "" },
-          update: {},
-          create: { name: input.companyName ?? "Yeni Firma" },
-        });
+        where: { name: input.companyName ?? "" },
+        update: {},
+        create: { name: input.companyName ?? "Yeni Firma" },
+      });
 
   if (!company) {
     return NextResponse.json({ error: "Firma bulunamadı." }, { status: 404 });
