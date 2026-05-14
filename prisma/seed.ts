@@ -31,14 +31,22 @@ async function main() {
     ),
   );
 
-  const defaultPassword = await bcrypt.hash("123456", 10);
+  const demoPasswordHash = await bcrypt.hash("123456", 10);
+
+  const adminEmail = (process.env.ADMIN_EMAIL ?? "admin@asirsepeti.com").trim().toLowerCase();
+  const adminPasswordPlain = process.env.ADMIN_PASSWORD ?? "123456";
+  const adminPasswordHash = await bcrypt.hash(adminPasswordPlain, 10);
 
   await prisma.user.upsert({
-    where: { email: "admin@asirsepeti.com" },
-    update: {},
+    where: { email: adminEmail },
+    update: {
+      password: adminPasswordHash,
+      name: "Sistem Yöneticisi",
+      role: "ADMIN",
+    },
     create: {
-      email: "admin@asirsepeti.com",
-      password: defaultPassword,
+      email: adminEmail,
+      password: adminPasswordHash,
       name: "Sistem Yöneticisi",
       role: "ADMIN",
     },
@@ -49,7 +57,7 @@ async function main() {
     update: { role: "CUSTOMER", name: "Demo Kullanıcı" },
     create: {
       email: "mutfak@asirsepeti.com",
-      password: defaultPassword,
+      password: demoPasswordHash,
       name: "Demo Kullanıcı",
       role: "CUSTOMER",
     },
@@ -62,7 +70,7 @@ async function main() {
       update: {},
       create: {
         email: "ford@asirsepeti.com",
-        password: defaultPassword,
+        password: demoPasswordHash,
         name: "Ford Satın Alma",
         role: "CUSTOMER",
         companyId: fordCompany.id,
