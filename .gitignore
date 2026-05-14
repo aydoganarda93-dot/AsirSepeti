@@ -33,6 +33,16 @@ yarn-error.log*
 # env files (keep secrets out of git; template is committed)
 .env*
 !.env.example
+.envrc
+
+# local / secrets (never commit)
+serviceAccount*.json
+*credentials*.json
+test-login.mjs
+
+# Cursor IDE (machine-local)
+.cursor/settings.json
+.cursor/skills/
 
 # vercel
 .vercel
