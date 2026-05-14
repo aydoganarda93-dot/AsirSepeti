@@ -1,9 +1,18 @@
-import { ItemCategory, PrismaClient } from "@prisma/client";
+import { ItemCategory, OrderKind, PrismaClient, Shift } from "@prisma/client";
 import { addDays, startOfDay } from "date-fns";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+const SHIFTS: Shift[] = ["MORNING", "EVENING", "NIGHT"];
+
 async function main() {
+  await prisma.appSettings.upsert({
+    where: { id: 1 },
+    update: {},
+    create: { id: 1 },
+  });
+
   const companies = [
     "Arçelik Fabrikası",
     "Ford Otosan",
@@ -22,13 +31,48 @@ async function main() {
     ),
   );
 
+  const defaultPassword = await bcrypt.hash("123456", 10);
+
+  await prisma.user.upsert({
+    where: { email: "admin@asirsepeti.com" },
+    update: {},
+    create: {
+      email: "admin@asirsepeti.com",
+      password: defaultPassword,
+      name: "Sistem Yöneticisi",
+      role: "ADMIN",
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: "mutfak@asirsepeti.com" },
+    update: { role: "CUSTOMER", name: "Demo Kullanıcı" },
+    create: {
+      email: "mutfak@asirsepeti.com",
+      password: defaultPassword,
+      name: "Demo Kullanıcı",
+      role: "CUSTOMER",
+    },
+  });
+
+  const fordCompany = created.find((c) => c.name === "Ford Otosan");
+  if (fordCompany) {
+    await prisma.user.upsert({
+      where: { email: "ford@asirsepeti.com" },
+      update: {},
+      create: {
+        email: "ford@asirsepeti.com",
+        password: defaultPassword,
+        name: "Ford Satın Alma",
+        role: "CUSTOMER",
+        companyId: fordCompany.id,
+      },
+    });
+  }
+
   const baseQuantities: Record<ItemCategory, number> = {
-    OGLEN_YEMEGI: 45,
-    KAPALI_KAP: 10,
-    SEFERTASI: 8,
-    SALATA: 20,
     KUMANYA: 5,
-    TATLI: 15,
+    OGLEN_YEMEGI: 40,
     EKMEK_ARASI: 12,
   };
 
@@ -36,37 +80,51 @@ async function main() {
 
   for (let i = 0; i < 2; i += 1) {
     const company = created[i];
-    await prisma.order.upsert({
+    const itemData = SHIFTS.flatMap((shift) =>
+      Object.entries(baseQuantities).map(([category, quantity]) => ({
+        shift,
+        category: category as ItemCategory,
+        quantity:
+          shift === "MORNING"
+            ? quantity
+            : shift === "EVENING"
+              ? quantity + i * 3
+              : Math.max(0, quantity - 2 + i),
+      })),
+    );
+    const existing = await prisma.order.findFirst({
       where: {
-        companyId_orderDate: {
-          companyId: company.id,
-          orderDate: dates[i],
-        },
-      },
-      update: {
-        contactName: "Satın Alma Yetkilisi",
-        notes: i === 0 ? "Az tuzlu menü" : "Vejetaryen opsiyonu",
-        items: {
-          deleteMany: {},
-          create: Object.entries(baseQuantities).map(([category, quantity]) => ({
-            category: category as ItemCategory,
-            quantity: quantity + i * 3,
-          })),
-        },
-      },
-      create: {
         companyId: company.id,
-        contactName: "Satın Alma Yetkilisi",
         orderDate: dates[i],
-        notes: i === 0 ? "Az tuzlu menü" : "Vejetaryen opsiyonu",
-        items: {
-          create: Object.entries(baseQuantities).map(([category, quantity]) => ({
-            category: category as ItemCategory,
-            quantity: quantity + i * 3,
-          })),
-        },
+        kind: OrderKind.STANDARD,
       },
     });
+    if (existing) {
+      await prisma.order.update({
+        where: { id: existing.id },
+        data: {
+          contactName: "Satın Alma Yetkilisi",
+          notes: i === 0 ? "Az tuzlu menü" : "Vejetaryen opsiyonu",
+          items: {
+            deleteMany: {},
+            create: itemData,
+          },
+        },
+      });
+    } else {
+      await prisma.order.create({
+        data: {
+          companyId: company.id,
+          contactName: "Satın Alma Yetkilisi",
+          orderDate: dates[i],
+          notes: i === 0 ? "Az tuzlu menü" : "Vejetaryen opsiyonu",
+          kind: OrderKind.STANDARD,
+          items: {
+            create: itemData,
+          },
+        },
+      });
+    }
   }
 }
 

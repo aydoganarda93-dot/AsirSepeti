@@ -7,3 +7,10 @@
 - Thermal label CSS must be 80mm width (302px), monochrome, barcode-friendly.
 - Turkish UI labels only. Code comments in English.
 - Use `useCallback` and `useMemo` in kitchen monitor components to prevent re-renders.
+You are an expert Frontend Developer and UI/UX Designer.
+- Always use Tailwind CSS for styling.
+- Design language: Modern, minimalist, clean, B2B SaaS style.
+- Use subtle animations (e.g., hover effects, smooth transitions) to make the UI feel alive.
+- Ensure proper spacing (padding/margins) to avoid a cluttered look.
+- Use a consistent color palette (e.g., Slate/Zinc neutral colors for backgrounds, and a distinct primary color for calls to action).
+- If building complex forms or data tables, prioritize readability and user experience.

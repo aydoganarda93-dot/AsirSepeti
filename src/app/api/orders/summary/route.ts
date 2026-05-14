@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { ensureAdmin } from "@/lib/api-auth";
 import { db } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/categories";
+import { parseDateOnlyUtc } from "@/lib/date";
 
 export async function GET(request: Request) {
   const unauthorized = await ensureAdmin();
@@ -15,7 +16,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Tarih zorunludur." }, { status: 400 });
   }
 
-  const start = new Date(date);
+  const start = parseDateOnlyUtc(date);
+  if (!start) {
+    return NextResponse.json({ error: "Geçersiz tarih formatı." }, { status: 400 });
+  }
   const rows = await db.orderItem.groupBy({
     by: ["category"],
     _sum: { quantity: true },
@@ -25,12 +29,8 @@ export async function GET(request: Request) {
   });
 
   const totals: Record<ItemCategory, number> = {
-    OGLEN_YEMEGI: 0,
-    KAPALI_KAP: 0,
-    SEFERTASI: 0,
-    SALATA: 0,
     KUMANYA: 0,
-    TATLI: 0,
+    OGLEN_YEMEGI: 0,
     EKMEK_ARASI: 0,
   };
 

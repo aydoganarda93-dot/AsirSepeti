@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { QueryProvider } from "@/components/query-provider";
+import { AuthProvider } from "@/components/auth-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,9 +29,17 @@ export default function RootLayout({
     <html
       lang="tr"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning={true}
     >
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
-        <QueryProvider>{children}</QueryProvider>
+      <body suppressHydrationWarning={true}>
+        <div className="min-h-full flex flex-col bg-slate-50 text-slate-900">
+          <AuthProvider>
+            <QueryProvider>
+              {children}
+              <Toaster richColors position="top-right" />
+            </QueryProvider>
+          </AuthProvider>
+        </div>
       </body>
     </html>
   );

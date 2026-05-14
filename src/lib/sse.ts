@@ -1,3 +1,5 @@
+import { db } from "@/lib/db";
+
 type EventPayload = {
   type: "order.changed" | "order.deleted";
   orderId: string;
@@ -17,6 +19,30 @@ export function subscribeSse(listener: Listener): () => void {
   return () => globalBus.listeners?.delete(listener);
 }
 
-export function publishSse(event: EventPayload) {
+export async function publishSse(event: EventPayload) {
+  await db.sseEvent.create({
+    data: {
+      eventType: event.type,
+      orderId: event.orderId,
+      ts: BigInt(event.ts),
+    },
+  });
   globalBus.listeners?.forEach((listener) => listener(event));
+}
+
+export async function readSseEventsSince(sinceTs: number) {
+  const rows = await db.sseEvent.findMany({
+    where: {
+      ts: {
+        gt: BigInt(sinceTs),
+      },
+    },
+    orderBy: { ts: "asc" },
+    take: 100,
+  });
+  return rows.map((row) => ({
+    type: row.eventType as EventPayload["type"],
+    orderId: row.orderId,
+    ts: Number(row.ts),
+  }));
 }

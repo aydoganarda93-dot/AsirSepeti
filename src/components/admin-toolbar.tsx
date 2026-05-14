@@ -14,7 +14,8 @@ type Props = {
   onCategory: (v: string) => void;
   onNotesOnly: (v: boolean) => void;
   onSort: (v: "name" | "total") => void;
-  onExport: () => void;
+  onExportExcel: () => void;
+  onExportCsv: () => void;
 };
 
 export function AdminToolbar({
@@ -28,16 +29,25 @@ export function AdminToolbar({
   onCategory,
   onNotesOnly,
   onSort,
-  onExport,
+  onExportExcel,
+  onExportCsv,
 }: Props) {
   return (
     <>
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin Paneli</h1>
-        <div className="flex gap-2">
+      <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">Admin Paneli</h1>
+          <a href="/admin/users" className="text-sm font-semibold text-blue-700 bg-blue-50 px-3 py-1.5 rounded border border-blue-200 hover:bg-blue-100 transition">
+            Kullanıcı Yönetimi
+          </a>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <input type="date" value={date} onChange={(e) => onDate(e.target.value)} className="rounded border p-2" />
-          <button className="rounded bg-emerald-700 px-3 py-2 text-sm font-semibold text-white" onClick={onExport}>
-            Excele Aktar
+          <button className="rounded bg-emerald-700 px-3 py-2 text-sm font-semibold text-white" onClick={onExportExcel}>
+            Excel İndir
+          </button>
+          <button className="rounded bg-slate-700 px-3 py-2 text-sm font-semibold text-white" onClick={onExportCsv}>
+            CSV İndir
           </button>
         </div>
       </header>

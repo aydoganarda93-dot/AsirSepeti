@@ -3,41 +3,97 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Company {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
-  orders    Order[]
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  adminNote           String?  @db.Text
+  /** E.164 (+905551234567) — WhatsApp / SMS gönderen eşlemesi */
+  whatsappPhoneE164   String?  @unique
+  createdAt           DateTime @default(now())
+  orders              Order[]
+  users               User[]
+  inboundMessages     InboundMessage[]
+  gridDailyArchives   CompanyGridDailyArchive[]
 
   @@index([name])
 }
 
+/** İşletmeler grid’i — öğle–öğle (Europe/Istanbul) kapanan gün anlık görüntüsü */
+model CompanyGridDailyArchive {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodStart DateTime @db.Timestamptz(3)
+  payload     Json
+  createdAt   DateTime @default(now())
+
+  @@unique([companyId, periodStart])
+  @@index([periodStart])
+}
+
 model Order {
   id          String      @id @default(uuid())
+  cancelToken String      @unique @default(uuid())
   companyId   String
   company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   orderDate   DateTime    @db.Date
   contactName String
   notes       String?     @db.Text
   status      OrderStatus @default(PENDING)
+  kind        OrderKind   @default(STANDARD)
+  /** İşletmeler grid’ine onay miktarları işlendiğinde set; PENDING’e geri alınınca temizlenir */
+  gridAppliedAt DateTime?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  items       OrderItem[]
+  items           OrderItem[]
+  inboundLinked   InboundMessage[] @relation("InboundOrderLink")
+  activities      OrderActivity[]
 
-  @@unique([companyId, orderDate])
+  @@index([companyId, orderDate])
   @@index([orderDate])
   @@index([status])
-  @@index([companyId, orderDate])
+}
+
+model OrderActivity {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type      String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model RateLimitLog {
+  id        String   @id @default(cuid())
+  ip        String
+  action    String
+  createdAt DateTime @default(now())
+
+  @@index([ip, action, createdAt])
+}
+
+model SseEvent {
+  id        String   @id @default(cuid())
+  eventType String
+  orderId   String
+  ts        BigInt
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model OrderItem {
   id        String       @id @default(uuid())
   orderId   String
   order     Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shift     Shift
   category  ItemCategory
   quantity  Int
   status    ItemStatus   @default(PENDING)
@@ -45,8 +101,11 @@ model OrderItem {
   updatedAt DateTime     @updatedAt
 
   @@index([orderId])
+  @@index([shift])
   @@index([category])
+  @@index([shift, category])
   @@index([status])
+  @@unique([orderId, shift, category])
 }
 
 enum OrderStatus {
@@ -57,6 +116,12 @@ enum OrderStatus {
   DELIVERED
 }
 
+/** STANDARD: ana sipariş; SUPPLEMENT: ek talep (ayrı onay satırı, örn. +5 öğün) */
+enum OrderKind {
+  STANDARD
+  SUPPLEMENT
+}
+
 enum ItemStatus {
   PENDING
   PREPARING
@@ -64,11 +129,75 @@ enum ItemStatus {
 }
 
 enum ItemCategory {
-  OGLEN_YEMEGI
-  KAPALI_KAP
-  SEFERTASI
-  SALATA
   KUMANYA
-  TATLI
+  OGLEN_YEMEGI
   EKMEK_ARASI
+}
+
+enum Shift {
+  MORNING
+  EVENING
+  NIGHT
+}
+
+enum Role {
+  ADMIN
+  KITCHEN
+  CUSTOMER
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(CUSTOMER)
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([email])
+}
+
+enum InboundMessageStatus {
+  PENDING_REVIEW
+  ORDER_CREATED
+  DISMISSED
+  NO_COMPANY
+  PARSE_EMPTY
+}
+
+/** WhatsApp / SMS / generic webhook ile gelen ham mesaj */
+model InboundMessage {
+  id                 String               @id @default(cuid())
+  provider           String               @default("generic")
+  externalId         String?              @unique
+  fromPhoneNorm      String
+  rawBody            String               @db.Text
+  companyId          String?
+  company            Company?             @relation(fields: [companyId], references: [id])
+  orderId            String?
+  order              Order?               @relation("InboundOrderLink", fields: [orderId], references: [id])
+  status             InboundMessageStatus @default(PENDING_REVIEW)
+  parseAppliedTokens Int                  @default(0)
+  createdAt          DateTime             @default(now())
+
+  @@index([status, createdAt])
+  @@index([companyId])
+  @@index([fromPhoneNorm])
+}
+
+/** Tek satır uygulama ayarları (singleton id = 1) */
+model AppSettings {
+  id                     Int       @id @default(1)
+  monthlyMenuStoragePath String?
+  monthlyMenuFileName    String?
+  monthlyMenuYearMonth   String?
+  monthlyMenuUpdatedAt           DateTime?
+  /** Son arşivlenen işletme grid günü (periodStart, İstanbul öğle) */
+  gridLastArchivedPeriodStart DateTime? @db.Timestamptz(3)
+
+  @@map("app_settings")
 }

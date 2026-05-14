@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CancelOrderButton } from "@/components/cancel-order-button";
 import { ALL_CATEGORIES, CATEGORY_LABELS } from "@/lib/categories";
 import { db } from "@/lib/db";
 
@@ -15,6 +16,7 @@ export default async function SuccessPage({ searchParams }: SuccessProps) {
       })
     : null;
   const total = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const canCancel = order ? new Date() < new Date(order.orderDate.getTime() - 24 * 60 * 60 * 1000) : false;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-green-50 p-4">
@@ -31,7 +33,11 @@ export default async function SuccessPage({ searchParams }: SuccessProps) {
               {ALL_CATEGORIES.map((category) => (
                 <div key={category} className="flex items-center justify-between border-b px-3 py-2 text-sm last:border-b-0">
                   <span>{CATEGORY_LABELS[category]}</span>
-                  <span className="font-semibold">{order.items.find((item) => item.category === category)?.quantity ?? 0}</span>
+                  <span className="font-semibold">
+                    {order.items
+                      .filter((item) => item.category === category)
+                      .reduce((sum, item) => sum + item.quantity, 0)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -41,6 +47,7 @@ export default async function SuccessPage({ searchParams }: SuccessProps) {
         <Link href="/" className="mt-6 inline-flex rounded bg-green-600 px-4 py-2 font-semibold text-white">
           Yeni Sipariş Ver
         </Link>
+        {order && canCancel ? <CancelOrderButton orderId={order.id} cancelToken={order.cancelToken} /> : null}
       </div>
     </main>
   );

@@ -1,17 +1,17 @@
-import { ItemCategory } from "@prisma/client";
+import { ItemCategory, Shift } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { ThermalLabel } from "@/components/thermal-label";
 import { db } from "@/lib/db";
 
 type LabelPageProps = {
   params: Promise<{ orderId: string }>;
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<{ category?: string; shift?: string }>;
 };
 
 export default async function LabelPage({ params, searchParams }: LabelPageProps) {
   const { orderId } = await params;
-  const { category } = await searchParams;
-  if (!category) notFound();
+  const { category, shift } = await searchParams;
+  if (!category || !shift) notFound();
 
   const order = await db.order.findUnique({
     where: { id: orderId },
@@ -19,7 +19,7 @@ export default async function LabelPage({ params, searchParams }: LabelPageProps
   });
   if (!order) notFound();
 
-  const current = order.items.find((item) => item.category === category);
+  const current = order.items.find((item) => item.category === category && item.shift === shift);
   if (!current) notFound();
 
   return (
@@ -30,6 +30,7 @@ export default async function LabelPage({ params, searchParams }: LabelPageProps
         companyName={order.company.name}
         orderDate={order.orderDate}
         category={current.category as ItemCategory}
+        shift={current.shift as Shift}
         quantity={current.quantity}
         notes={order.notes}
       />

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/close-company-grid-day",
+      "schedule": "5 9 * * *"
+    }
+  ]
+}

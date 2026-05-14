@@ -2,20 +2,18 @@ import { ItemCategory } from "@prisma/client";
 
 export const ALL_CATEGORIES: ItemCategory[] = [
   ItemCategory.OGLEN_YEMEGI,
-  ItemCategory.KAPALI_KAP,
-  ItemCategory.SEFERTASI,
-  ItemCategory.SALATA,
-  ItemCategory.KUMANYA,
-  ItemCategory.TATLI,
   ItemCategory.EKMEK_ARASI,
+  ItemCategory.KUMANYA,
 ];
 
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
-  OGLEN_YEMEGI: "Öğlen Yemeği",
-  KAPALI_KAP: "Kapalı Kap",
-  SEFERTASI: "Sefertası",
-  SALATA: "Salata",
   KUMANYA: "Kumanya",
-  TATLI: "Tatlı",
+  OGLEN_YEMEGI: "Yemek",
   EKMEK_ARASI: "Ekmek Arası",
 };
+
+export const SHIFT_LABELS = {
+  MORNING: "Sabah",
+  EVENING: "Akşam",
+  NIGHT: "Gece",
+} as const;

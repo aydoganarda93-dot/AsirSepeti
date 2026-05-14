@@ -4,10 +4,18 @@ import { db } from "@/lib/db";
 import { companyCreateSchema } from "@/lib/validations";
 
 export async function GET() {
-  const companies = await db.company.findMany({
-    orderBy: { name: "asc" },
-  });
-  return NextResponse.json(companies);
+  try {
+    // Public is intentional: sipariş formundaki firma dropdown'ı bu endpointi kullanır.
+    const companies = await db.company.findMany({
+      orderBy: { name: "asc" },
+    });
+    return NextResponse.json(companies);
+  } catch {
+    return NextResponse.json(
+      { error: "Firma listesi alınamadı. Veritabanı bağlantısını kontrol edin." },
+      { status: 503 },
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -21,9 +29,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const company = await db.company.create({
-    data: { name: parsed.data.name },
-  });
+  let company;
+  try {
+    company = await db.company.create({
+      data: { name: parsed.data.name },
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Firma kaydedilemedi. Veritabanı bağlantısını kontrol edin." },
+      { status: 503 },
+    );
+  }
 
   return NextResponse.json(company, { status: 201 });
 }
