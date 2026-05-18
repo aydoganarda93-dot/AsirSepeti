@@ -31,6 +31,7 @@ const categoryShape = {
   KUMANYA: z.number().int().min(0),
   OGLEN_YEMEGI: z.number().int().min(0),
   EKMEK_ARASI: z.number().int().min(0),
+  DUZ_EKMEK: z.number().int().min(0),
 };
 
 const formSchema = z
@@ -76,6 +77,7 @@ const emptyShift = () =>
     KUMANYA: 0,
     OGLEN_YEMEGI: 0,
     EKMEK_ARASI: 0,
+    DUZ_EKMEK: 0,
   }) as const;
 
 function subscribeClientMounted(onStoreChange: () => void) {
@@ -104,7 +106,7 @@ export default function Home() {
   const [showSuccessSplash, setShowSuccessSplash] = useState(false);
   const [orderTab, setOrderTab] = useState<CustomerOrderTab>("quick");
   const [quickPreviewText, setQuickPreviewText] = useState("");
-  const [splashOrderId, setSplashOrderId] = useState<string | null>(null);
+  const [splashOrder, setSplashOrder] = useState<{ id: string; cancelToken: string } | null>(null);
 
   const minDate = formatUtcYmdFromOffset(0);
   const maxDate = formatUtcYmdFromOffset(365);
@@ -160,10 +162,13 @@ export default function Home() {
 
   const handleSuccessSplashDone = useCallback(() => {
     setShowSuccessSplash(false);
-    const id = splashOrderId;
-    setSplashOrderId(null);
-    if (id) router.push(`/success?orderId=${id}`);
-  }, [router, splashOrderId]);
+    const current = splashOrder;
+    setSplashOrder(null);
+    if (current) {
+      const params = new URLSearchParams({ orderId: current.id, t: current.cancelToken });
+      router.push(`/success?${params.toString()}`);
+    }
+  }, [router, splashOrder]);
 
   const resetFormFresh = useCallback(() => {
     setEditingOrderId(null);
@@ -272,7 +277,7 @@ export default function Home() {
       return;
     }
 
-    const data = (await response.json()) as { id: string };
+    const data = (await response.json()) as { id: string; cancelToken: string };
 
     if (extraOrderMode) {
       toast.success("Üzerine ekleme gönderildi; onay bekliyor.");
@@ -281,7 +286,7 @@ export default function Home() {
       return;
     }
 
-    setSplashOrderId(data.id);
+    setSplashOrder({ id: data.id, cancelToken: data.cancelToken });
     resetFormFresh();
     void queryClient.invalidateQueries({ queryKey: ["my-orders"] });
     setShowSuccessSplash(true);

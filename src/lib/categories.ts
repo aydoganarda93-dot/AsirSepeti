@@ -3,6 +3,7 @@ import { ItemCategory } from "@prisma/client";
 export const ALL_CATEGORIES: ItemCategory[] = [
   ItemCategory.OGLEN_YEMEGI,
   ItemCategory.EKMEK_ARASI,
+  ItemCategory.DUZ_EKMEK,
   ItemCategory.KUMANYA,
 ];
 
@@ -10,6 +11,7 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
   KUMANYA: "Kumanya",
   OGLEN_YEMEGI: "Yemek",
   EKMEK_ARASI: "Ekmek Arası",
+  DUZ_EKMEK: "Düz Ekmek",
 };
 
 export const SHIFT_LABELS = {

@@ -9,8 +9,12 @@ export type OrderItemForHint = {
 export type CompanyOrderGridHints = {
   /** Öğle adet altı: sabah yemek + sabah kumanya (örn. "29 + 29 kum") */
   oglenOrderLine: string | null;
+  /** Öğle ekmek altı: sabah ekmek arası + düz ekmek */
+  oglenEkmekOrderLine: string | null;
   /** Akşam adet altı: akşam yemek + akşam kumanya */
   aksamOrderLine: string | null;
+  /** Akşam ekmek altı: akşam/gece ekmek arası + düz ekmek */
+  aksamEkmekOrderLine: string | null;
   /** Kumanya sütunu: gece yemek + tüm vardiya kumanya */
   kumanyaOrderLine: string | null;
 };
@@ -34,6 +38,15 @@ function formatKumanyaColumn(nightYemek: number, pureKumanya: number): string | 
   return `${pk} kum`;
 }
 
+function formatEkmekColumn(ekmekArasi: number, duzEkmek: number): string | null {
+  const ea = Math.max(0, Math.floor(ekmekArasi));
+  const de = Math.max(0, Math.floor(duzEkmek));
+  if (ea <= 0 && de <= 0) return null;
+  if (ea > 0 && de > 0) return `${ea} arası + ${de} düz`;
+  if (ea > 0) return `${ea} arası`;
+  return `${de} düz`;
+}
+
 export function computeCompanyOrderGridHints(items: OrderItemForHint[]): CompanyOrderGridHints {
   let morningYemek = 0;
   let morningKum = 0;
@@ -41,6 +54,12 @@ export function computeCompanyOrderGridHints(items: OrderItemForHint[]): Company
   let eveningKum = 0;
   let nightYemek = 0;
   let nightKum = 0;
+  let morningEkmekArasi = 0;
+  let morningDuzEkmek = 0;
+  let eveningEkmekArasi = 0;
+  let eveningDuzEkmek = 0;
+  let nightEkmekArasi = 0;
+  let nightDuzEkmek = 0;
 
   for (const it of items) {
     const q = it.quantity;
@@ -48,12 +67,18 @@ export function computeCompanyOrderGridHints(items: OrderItemForHint[]): Company
     if (it.shift === "MORNING") {
       if (it.category === "OGLEN_YEMEGI") morningYemek += q;
       if (it.category === "KUMANYA") morningKum += q;
+      if (it.category === "EKMEK_ARASI") morningEkmekArasi += q;
+      if (it.category === "DUZ_EKMEK") morningDuzEkmek += q;
     } else if (it.shift === "EVENING") {
       if (it.category === "OGLEN_YEMEGI") eveningYemek += q;
       if (it.category === "KUMANYA") eveningKum += q;
+      if (it.category === "EKMEK_ARASI") eveningEkmekArasi += q;
+      if (it.category === "DUZ_EKMEK") eveningDuzEkmek += q;
     } else if (it.shift === "NIGHT") {
       if (it.category === "OGLEN_YEMEGI") nightYemek += q;
       if (it.category === "KUMANYA") nightKum += q;
+      if (it.category === "EKMEK_ARASI") nightEkmekArasi += q;
+      if (it.category === "DUZ_EKMEK") nightDuzEkmek += q;
     }
   }
 
@@ -61,7 +86,9 @@ export function computeCompanyOrderGridHints(items: OrderItemForHint[]): Company
 
   return {
     oglenOrderLine: formatYemekPlusKum(morningYemek, morningKum),
+    oglenEkmekOrderLine: formatEkmekColumn(morningEkmekArasi, morningDuzEkmek),
     aksamOrderLine: formatYemekPlusKum(eveningYemek, eveningKum),
+    aksamEkmekOrderLine: formatEkmekColumn(eveningEkmekArasi + nightEkmekArasi, eveningDuzEkmek + nightDuzEkmek),
     kumanyaOrderLine: formatKumanyaColumn(nightYemek, pureKumanyaTotal),
   };
 }

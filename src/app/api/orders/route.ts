@@ -1,4 +1,4 @@
-import { ItemCategory, OrderKind, Shift } from "@prisma/client";
+import { ItemCategory, OrderKind, Prisma, Shift } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { ensureAdmin } from "@/lib/api-auth";
@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/categories";
 import { ORDER_ACTIVITY_TYPES } from "@/lib/order-activity";
 import { parseDateOnlyUtc } from "@/lib/date";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { publishSse } from "@/lib/sse";
 import { assertOrderDateWindow, createOrderBodySchema } from "@/lib/validations";
 
@@ -16,54 +17,10 @@ type ShiftPayload = {
   night: Record<ItemCategory, number>;
 };
 
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 saat
-const RATE_LIMIT_MAX_REQUESTS = 5;
-
-function getClientIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() ?? "unknown";
-  }
-  return request.headers.get("x-real-ip") ?? "unknown";
-}
-
-async function checkRateLimit(ip: string) {
-  const now = Date.now();
-  const windowStartDate = new Date(now - RATE_LIMIT_WINDOW_MS);
-  const recent = await db.rateLimitLog.findMany({
-    where: {
-      ip,
-      action: "create-order",
-      createdAt: { gt: windowStartDate },
-    },
-    orderBy: { createdAt: "asc" },
-    select: { createdAt: true },
-  });
-
-  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
-    const oldestInWindow = recent[0]?.createdAt.getTime() ?? now;
-    const retryAfterMs = Math.max(0, oldestInWindow + RATE_LIMIT_WINDOW_MS - now);
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
-    };
-  }
-
-  await db.rateLimitLog.create({
-    data: {
-      ip,
-      action: "create-order",
-    },
-  });
-
-  void db.rateLimitLog.deleteMany({
-    where: {
-      createdAt: { lt: new Date(now - 7 * 24 * 60 * 60 * 1000) },
-    },
-  });
-
-  return { allowed: true, retryAfterSeconds: 0 };
-}
+const CREATE_ORDER_RATE_LIMIT = {
+  windowMs: 60 * 60 * 1000, // 1 saat
+  max: 5,
+};
 
 function toItems(quantities: ShiftPayload) {
   const shifts: Array<{ key: keyof ShiftPayload; shift: Shift }> = [
@@ -150,7 +107,7 @@ export async function POST(request: Request) {
     }
 
     const ip = getClientIp(request);
-    const rateLimit = await checkRateLimit(ip);
+    const rateLimit = await checkRateLimit(ip, "create-order", CREATE_ORDER_RATE_LIMIT);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {
@@ -225,19 +182,48 @@ export async function POST(request: Request) {
           include: { company: true, items: true },
         });
       } else {
-        order = await db.order.create({
-          data: {
-            companyId: company.id,
-            contactName,
-            orderDate: validDate,
-            notes: input.notes,
-            kind: OrderKind.STANDARD,
-            items: {
-              create: toItems(input.quantities),
+        try {
+          order = await db.order.create({
+            data: {
+              companyId: company.id,
+              contactName,
+              orderDate: validDate,
+              notes: input.notes,
+              kind: OrderKind.STANDARD,
+              items: {
+                create: toItems(input.quantities),
+              },
             },
-          },
-          include: { company: true, items: true },
-        });
+            include: { company: true, items: true },
+          });
+        } catch (err) {
+          // Admin manuel create ile eşzamanlı müşteri create yarışı → upsert davranışına düş.
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+            const raced = await db.order.findFirst({
+              where: {
+                companyId: company.id,
+                orderDate: validDate,
+                kind: OrderKind.STANDARD,
+              },
+            });
+            if (!raced) throw err;
+            adminManualUpsert = true;
+            order = await db.order.update({
+              where: { id: raced.id },
+              data: {
+                contactName,
+                notes: input.notes,
+                items: {
+                  deleteMany: {},
+                  create: toItems(input.quantities),
+                },
+              },
+              include: { company: true, items: true },
+            });
+          } else {
+            throw err;
+          }
+        }
       }
     } else if (asSupplement) {
       order = await db.order.create({
@@ -284,19 +270,53 @@ export async function POST(request: Request) {
         );
       }
 
-      order = await db.order.create({
-        data: {
-          companyId: company.id,
-          contactName,
-          orderDate: validDate,
-          notes: input.notes,
-          kind: OrderKind.STANDARD,
-          items: {
-            create: toItems(input.quantities),
+      try {
+        order = await db.order.create({
+          data: {
+            companyId: company.id,
+            contactName,
+            orderDate: validDate,
+            notes: input.notes,
+            kind: OrderKind.STANDARD,
+            items: {
+              create: toItems(input.quantities),
+            },
           },
-        },
-        include: { company: true, items: true },
-      });
+          include: { company: true, items: true },
+        });
+      } catch (err) {
+        // Race: arada başka istek aynı (companyId, orderDate, STANDARD) için kayıt açtı.
+        // Order_companyId_orderDate_standard_key partial unique index P2002 fırlatır.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          const racedExisting = await db.order.findFirst({
+            where: {
+              companyId: company.id,
+              orderDate: validDate,
+              kind: OrderKind.STANDARD,
+            },
+          });
+          if (racedExisting?.status === "PENDING") {
+            return NextResponse.json(
+              {
+                error:
+                  "Bu güne zaten sipariş göndermişsiniz; önce «Siparişlerim»den düzeltin veya «Üzerine ekle» kullanın.",
+                code: "PENDING_STANDARD_EXISTS",
+                existingOrderId: racedExisting.id,
+              },
+              { status: 409 },
+            );
+          }
+          return NextResponse.json(
+            {
+              error:
+                "Bu güne ait siparişiniz işleme alındı. Ek adet için «Üzerine ekle»ye basın.",
+              code: "STANDARD_LOCKED",
+            },
+            { status: 409 },
+          );
+        }
+        throw err;
+      }
     }
     await db.orderActivity.create({
       data: {

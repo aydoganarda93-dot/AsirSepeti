@@ -2,7 +2,28 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { registerSchema } from "@/lib/validations";
+
+/**
+ * Kayıt politikası: açık — ancak kötüye kullanıma karşı çok katmanlı koruma.
+ *
+ * 1) IP başına saatlik 3 deneme (RateLimitLog, action="register").
+ * 2) Cloudflare Turnstile (env varsa zorunlu). TURNSTILE_SECRET_KEY tanımlı
+ *    değilse atlanır — geliştirme ve geri uyum için.
+ * 3) Zod schema: trim, lowercase email, min/max uzunluklar.
+ * 4) Prisma P2002 → kullanıcı dostu Türkçe mesaj.
+ *
+ * NEXT_PUBLIC_TURNSTILE_SITE_KEY ile widget render edilir (src/app/kayit/page.tsx);
+ * client widget'tan dönen token "turnstileToken" alanı olarak gelir.
+ */
+
+const REGISTER_RATE_LIMIT = {
+  windowMs: 60 * 60 * 1000, // 1 saat
+  max: 3,
+};
+
+const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 function registerFailureMessage(error: unknown): string {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -32,9 +53,62 @@ function registerFailureMessage(error: unknown): string {
   return "Kayıt işlemi tamamlanamadı.";
 }
 
+async function verifyTurnstile(token: string | undefined, ip: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
+  if (!secret) {
+    return { ok: true };
+  }
+  if (!token || token.trim().length === 0) {
+    return { ok: false, reason: "Bot doğrulaması başarısız. Lütfen kutuyu işaretleyin." };
+  }
+
+  try {
+    const verifyResponse = await fetch(TURNSTILE_VERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        secret,
+        response: token.trim(),
+        remoteip: ip,
+      }),
+      // Edge function değil; Node fetch timeout için AbortController ekleyebiliriz, şimdilik yeterli.
+    });
+    const data = (await verifyResponse.json().catch(() => null)) as { success?: boolean } | null;
+    if (!data?.success) {
+      return { ok: false, reason: "Bot doğrulaması başarısız. Sayfayı yenileyip tekrar deneyin." };
+    }
+    return { ok: true };
+  } catch (error) {
+    console.error("[api/auth/register] turnstile verify failed", error);
+    return { ok: false, reason: "Bot doğrulaması yapılamadı. Bağlantınızı kontrol edip tekrar deneyin." };
+  }
+}
+
 export async function POST(request: Request) {
   try {
+    const ip = getClientIp(request);
+
+    const rateLimit = await checkRateLimit(ip, "register", REGISTER_RATE_LIMIT);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: "Çok fazla kayıt denemesi yaptınız. Lütfen daha sonra tekrar deneyin.",
+          retryAfterSeconds: rateLimit.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
+
     const body = await request.json();
+
+    const turnstileResult = await verifyTurnstile(typeof body?.turnstileToken === "string" ? body.turnstileToken : undefined, ip);
+    if (!turnstileResult.ok) {
+      return NextResponse.json({ error: turnstileResult.reason }, { status: 400 });
+    }
+
     const parsed = registerSchema.safeParse(body);
 
     if (!parsed.success) {

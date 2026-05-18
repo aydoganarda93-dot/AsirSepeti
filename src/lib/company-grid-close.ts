@@ -1,6 +1,6 @@
 import { addDays } from "date-fns";
 import { db } from "@/lib/db";
-import { emptyGridPayload, serializeGridToAdminNote } from "@/lib/company-admin-grid";
+import { emptyGridPayload, parseAdminNoteToGrid, serializeGridToAdminNote } from "@/lib/company-admin-grid";
 import { istanbulCalendarNoonForInstant, liveGridPeriodStart } from "@/lib/company-grid-period";
 
 /**
@@ -40,9 +40,12 @@ export async function runCompanyGridDayClose(now = new Date()): Promise<{ archiv
           },
           update: { payload },
         });
+        const nextLivePayload = emptyGridPayload();
+        nextLivePayload.cesit = parseAdminNoteToGrid(c.adminNote).cesit;
+
         await tx.company.update({
           where: { id: c.id },
-          data: { adminNote: serializeGridToAdminNote(emptyGridPayload()) },
+          data: { adminNote: serializeGridToAdminNote(nextLivePayload) },
         });
       }
       await tx.appSettings.update({

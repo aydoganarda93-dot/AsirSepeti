@@ -1,4 +1,4 @@
-import { ItemCategory, OrderKind, Shift } from "@prisma/client";
+import { ItemCategory, OrderKind, Prisma, Shift } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/categories";
 import { assertOrderDateWindow } from "@/lib/validations";
@@ -57,19 +57,29 @@ export async function promoteInboundMessageToOrder(inboundId: string, orderDateR
 
   const notes = `[WhatsApp ${inbound.fromPhoneNorm}]\n${inbound.rawBody}`.slice(0, 2000);
 
-  const order = await db.order.create({
-    data: {
-      companyId: inbound.companyId,
-      contactName: "WhatsApp",
-      orderDate: validDate,
-      notes,
-      kind: OrderKind.STANDARD,
-      items: {
-        create: toItems(parsed.quantities),
+  let order;
+  try {
+    order = await db.order.create({
+      data: {
+        companyId: inbound.companyId,
+        contactName: "WhatsApp",
+        orderDate: validDate,
+        notes,
+        kind: OrderKind.STANDARD,
+        items: {
+          create: toItems(parsed.quantities),
+        },
       },
-    },
-    include: { company: true, items: true },
-  });
+      include: { company: true, items: true },
+    });
+  } catch (err) {
+    // Race: promote ile eşzamanlı başka kanal (müşteri / admin) aynı gün STANDARD açtı.
+    // Order_companyId_orderDate_standard_key partial unique index P2002 fırlatır.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw new Error("Bu teslim tarihinde ana sipariş zaten var; catering veya düzenleme kullanın.");
+    }
+    throw err;
+  }
 
   await db.orderActivity.create({
     data: {

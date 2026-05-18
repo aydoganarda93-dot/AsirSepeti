@@ -122,7 +122,7 @@ export function computeGridDeltasFromOrderItems(items: OrderItemLike[]): {
       if (item.shift === "EVENING") aksam += q;
       if (item.shift === "NIGHT") kumanya += q;
     }
-    if (item.category === "EKMEK_ARASI") {
+    if (item.category === "EKMEK_ARASI" || item.category === "DUZ_EKMEK") {
       if (item.shift === "MORNING") oglenEkmek += q;
       if (item.shift === "EVENING" || item.shift === "NIGHT") aksamEkmek += q;
     }

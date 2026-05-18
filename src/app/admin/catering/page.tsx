@@ -2,7 +2,7 @@
 
 import { ItemCategory, OrderKind, OrderStatus, Shift } from "@prisma/client";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
@@ -43,20 +43,6 @@ import { cn } from "@/lib/utils";
 type Company = { id: string; name: string };
 
 const URGENT_WINDOW_MS = 2 * 60 * 60 * 1000;
-
-function subscribeClientNow(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  const id = window.setInterval(onStoreChange, 60_000);
-  return () => window.clearInterval(id);
-}
-
-function getClientNowSnapshot() {
-  return typeof window !== "undefined" ? Date.now() : 0;
-}
-
-function getServerNowSnapshot() {
-  return 0;
-}
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: "Beklemede",
@@ -135,7 +121,14 @@ export default function AdminCateringPage() {
     [selectedOrderIds, activeOrderIdSet],
   );
 
-  const nowMs = useSyncExternalStore(subscribeClientNow, getClientNowSnapshot, getServerNowSnapshot);
+  // "Acil" sayacının saatçi rolü. SSR'da 0; mount'ta Date.now()'a sıçrar; sonra 60 saniyede bir günceller.
+  // Not: useSyncExternalStore burada uygunsuzdu — Date.now() her çağrıda farklı dönüp sonsuz re-render tetikliyordu.
+  const [nowMs, setNowMs] = useState<number>(0);
+  useEffect(() => {
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const totalPortions = useMemo(() => sumPortions(activeOrders), [activeOrders]);
 

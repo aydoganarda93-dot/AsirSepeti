@@ -43,6 +43,7 @@ const CATEGORY_HINTS: Record<ItemCategory, string> = {
   KUMANYA: "Sık aralık: 10–80",
   OGLEN_YEMEGI: "Sık aralık: 30–150",
   EKMEK_ARASI: "Çoğu işletme: 80–120",
+  DUZ_EKMEK: "Ekmek adedi",
 };
 
 function QuickQtyPopover({

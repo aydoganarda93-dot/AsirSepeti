@@ -34,6 +34,7 @@ function detectShiftExplicit(padded: string): ShiftKeyQuick | null {
 /** Kumanya / yemek / ekmek — null ise vardiya toplamı (öğüne dağıtılır) */
 function detectCategory(padded: string): ItemCategory | null {
   if (padded.includes(" kumanya ")) return "KUMANYA";
+  if (padded.includes(" düz ekmek ") || padded.includes(" duz ekmek ")) return "DUZ_EKMEK";
   if (padded.includes(" ekmek arası ") || padded.includes(" ekmek arasi ")) return "EKMEK_ARASI";
   if (padded.includes(" ekmek ") && !padded.includes(" yemek ")) return "EKMEK_ARASI";
   if (

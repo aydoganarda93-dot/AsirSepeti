@@ -57,6 +57,10 @@ model Order {
   @@index([companyId, orderDate])
   @@index([orderDate])
   @@index([status])
+  // Partial unique: aynı gün için tek STANDARD sipariş (SUPPLEMENT'lar serbest).
+  // İndeks adı: Order_companyId_orderDate_standard_key
+  // SQL: prisma/migrations/20260518214500_add_order_standard_unique/migration.sql
+  // Prisma şema dili partial unique desteklemez; race'te P2002 normal olarak fırlatılır.
 }
 
 model OrderActivity {
@@ -132,6 +136,7 @@ enum ItemCategory {
   KUMANYA
   OGLEN_YEMEGI
   EKMEK_ARASI
+  DUZ_EKMEK
 }
 
 enum Shift {

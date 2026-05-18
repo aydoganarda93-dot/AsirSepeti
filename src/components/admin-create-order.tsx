@@ -18,6 +18,7 @@ function emptyCategories(): Record<ItemCategory, number> {
     KUMANYA: 0,
     OGLEN_YEMEGI: 0,
     EKMEK_ARASI: 0,
+    DUZ_EKMEK: 0,
   };
 }
 

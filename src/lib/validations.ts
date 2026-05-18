@@ -8,6 +8,7 @@ export const categoryQuantitiesSchema = z.object({
   KUMANYA: quantitySchema,
   OGLEN_YEMEGI: quantitySchema,
   EKMEK_ARASI: quantitySchema,
+  DUZ_EKMEK: quantitySchema,
 });
 
 export const shiftQuantitiesSchema = z
@@ -27,7 +28,7 @@ export const shiftQuantitiesSchema = z
     "En az bir vardiyada en az bir kategori için adet 1 veya daha fazla olmalıdır.",
   );
 
-const itemCategoryEnum = z.enum(["KUMANYA", "OGLEN_YEMEGI", "EKMEK_ARASI"]);
+const itemCategoryEnum = z.enum(["KUMANYA", "OGLEN_YEMEGI", "EKMEK_ARASI", "DUZ_EKMEK"]);
 const itemStatusEnum = z.enum(["PENDING", "PREPARING", "READY"]);
 const shiftEnum = z.enum(["MORNING", "EVENING", "NIGHT"]);
 

@@ -82,6 +82,7 @@ async function main() {
     KUMANYA: 5,
     OGLEN_YEMEGI: 40,
     EKMEK_ARASI: 12,
+    DUZ_EKMEK: 0,
   };
 
   const dates = [addDays(startOfDay(new Date()), 2), addDays(startOfDay(new Date()), 3)];
