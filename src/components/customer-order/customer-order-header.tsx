@@ -6,6 +6,7 @@ import { MonthlyMenuCard } from "@/components/monthly-menu-card";
 
 type Props = {
   showMenu: boolean;
+  orderDateYmd?: string;
   showRepeat: boolean;
   lastOrderSummary?: { dateLabel: string; itemsLine: string } | null;
   showUser: boolean;
@@ -15,6 +16,7 @@ type Props = {
 
 export function CustomerOrderHeader({
   showMenu,
+  orderDateYmd,
   showRepeat,
   lastOrderSummary,
   showUser,
@@ -23,7 +25,7 @@ export function CustomerOrderHeader({
 }: Props) {
   return (
     <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm ring-1 ring-slate-100/80 backdrop-blur-sm md:flex-row md:items-center md:justify-between">
-      <div className="min-w-0 flex-1">{showMenu ? <MonthlyMenuCard /> : null}</div>
+      <div className="min-w-0 flex-1">{showMenu ? <MonthlyMenuCard orderDateYmd={orderDateYmd} /> : null}</div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:justify-end">
         {showRepeat ? (
           <button

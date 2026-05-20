@@ -173,6 +173,8 @@ export default function Home() {
     },
   });
 
+  const orderDateYmd = form.watch("orderDate");
+
   const bumpQuantityHighlight = useCallback(() => {
     setQtyHighlight(true);
     window.setTimeout(() => setQtyHighlight(false), 700);
@@ -348,6 +350,7 @@ export default function Home() {
       <div className="mx-auto max-w-6xl px-3 md:px-6">
         <CustomerOrderHeader
           showMenu={showMenuCard}
+          orderDateYmd={orderDateYmd}
           showRepeat={showCustomerPanel && lastOrderSummary !== null}
           lastOrderSummary={lastOrderSummary}
           showUser={Boolean(session?.user)}

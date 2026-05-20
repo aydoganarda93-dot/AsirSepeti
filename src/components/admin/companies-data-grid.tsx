@@ -325,7 +325,12 @@ export function CompaniesDataGrid({
               <th className="sticky left-12 z-30 min-w-[180px] border-r border-slate-200 bg-slate-100/95 px-4 py-3 text-left backdrop-blur-sm">
                 Firma
               </th>
-              <th className="border-r border-slate-200 bg-slate-100/95 px-3 py-3">Çeşit</th>
+              <th className="border-r border-slate-200 bg-slate-100/95 px-3 py-3">
+                <span className="block">Çeşit</span>
+                <span className="mt-0.5 block text-[9px] font-normal normal-case text-slate-500">
+                  Sabit
+                </span>
+              </th>
               <th colSpan={oglenColSpan} className="border-r border-slate-200 bg-slate-100/95 px-2 py-3 text-center">
                 <SectionToggle section="oglen" label="Öğle servisi" />
               </th>
@@ -335,7 +340,12 @@ export function CompaniesDataGrid({
               <th colSpan={geceColSpan} className="border-r border-slate-200 bg-slate-100/95 px-2 py-3 text-center">
                 <SectionToggle section="gece" label="Gece servisi" />
               </th>
-              <th className="bg-slate-100/95 px-3 py-3 text-left">Açıklama</th>
+              <th className="bg-slate-100/95 px-3 py-3 text-left">
+                <span className="block">Açıklama</span>
+                <span className="mt-0.5 block text-[9px] font-normal normal-case text-slate-500">
+                  Sabit
+                </span>
+              </th>
               <th className="w-28 bg-slate-100/95 px-2 py-3 text-center">İşlem</th>
             </tr>
             <tr className="border-b border-slate-200 bg-slate-50/90 text-[11px] font-medium text-slate-500">

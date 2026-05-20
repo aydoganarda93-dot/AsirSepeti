@@ -12,9 +12,22 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const YEAR_MONTH_RE = /^\d{4}-\d{2}$/;
 
+/** İstanbul takvimine göre `yyyy-MM` (müşteri sipariş günü ile uyumlu). */
+export function currentYearMonthIstanbul(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Istanbul",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  if (year && month) return `${year}-${month}`;
+  return formatUtcYmdFromOffset(0).slice(0, 7);
+}
+
 export function resolveYearMonthParam(value: string | null): string {
   if (value && YEAR_MONTH_RE.test(value)) return value;
-  return formatUtcYmdFromOffset(0).slice(0, 7);
+  return currentYearMonthIstanbul();
 }
 
 export async function getSettingsRow() {
@@ -29,22 +42,42 @@ export type ActiveMenu = {
   kind: MonthlyMenuKind;
 };
 
+function activeMenuFromSettings(
+  s: NonNullable<Awaited<ReturnType<typeof getSettingsRow>>>,
+): ActiveMenu {
+  const kind =
+    monthlyMenuKindFromName(s.monthlyMenuFileName) ??
+    monthlyMenuKindFromPath(s.monthlyMenuStoragePath!) ??
+    "pdf";
+
+  return {
+    path: s.monthlyMenuStoragePath!,
+    fileName: s.monthlyMenuFileName,
+    updatedAt: s.monthlyMenuUpdatedAt,
+    yearMonth: s.monthlyMenuYearMonth!,
+    kind,
+  };
+}
+
+/** Veritabanındaki son yüklenen menü (ay filtresi yok). */
+export async function getStoredMenu(): Promise<ActiveMenu | null> {
+  const s = await getSettingsRow();
+  if (!s?.monthlyMenuStoragePath || !s.monthlyMenuYearMonth) return null;
+  return activeMenuFromSettings(s);
+}
+
 export async function getActiveMenuForMonth(yearMonth: string): Promise<ActiveMenu | null> {
   const s = await getSettingsRow();
   if (!s?.monthlyMenuStoragePath || !s.monthlyMenuYearMonth) return null;
   if (s.monthlyMenuYearMonth !== yearMonth) return null;
-  const kind =
-    monthlyMenuKindFromName(s.monthlyMenuFileName) ??
-    monthlyMenuKindFromPath(s.monthlyMenuStoragePath) ??
-    "pdf";
+  return activeMenuFromSettings(s);
+}
 
-  return {
-    path: s.monthlyMenuStoragePath,
-    fileName: s.monthlyMenuFileName,
-    updatedAt: s.monthlyMenuUpdatedAt,
-    yearMonth: s.monthlyMenuYearMonth,
-    kind,
-  };
+/** İstenen ay için menü; yoksa sunucudaki son yüklenen menüye düşer. */
+export async function resolveMenuForRequest(requestedYearMonth: string): Promise<ActiveMenu | null> {
+  const exact = await getActiveMenuForMonth(requestedYearMonth);
+  if (exact) return exact;
+  return getStoredMenu();
 }
 
 export async function createSignedMenuUrl(storagePath: string): Promise<string> {

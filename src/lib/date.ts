@@ -28,6 +28,26 @@ export function formatInstantTr(iso: Date | string): string {
 }
 
 /** `yyyy-MM-dd` → İstanbul takvim günü etiketi */
+const YEAR_MONTH_RE = /^\d{4}-\d{2}$/;
+
+export function yearMonthFromOrderDate(orderDateYmd: string | null | undefined): string | null {
+  if (!orderDateYmd || !/^\d{4}-\d{2}-\d{2}$/.test(orderDateYmd)) return null;
+  const ym = orderDateYmd.slice(0, 7);
+  return YEAR_MONTH_RE.test(ym) ? ym : null;
+}
+
+/** `yyyy-MM` → "Mayıs 2026" */
+export function formatYearMonthTr(ym: string): string {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return ym;
+  const parsed = new Date(`${ym}-15T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return ym;
+  return new Intl.DateTimeFormat("tr-TR", {
+    timeZone: "UTC",
+    month: "long",
+    year: "numeric",
+  }).format(parsed);
+}
+
 export function formatDateOnlyTr(ymd: string): string {
   const parsed = parseDateOnlyUtc(ymd);
   if (!parsed) return ymd;

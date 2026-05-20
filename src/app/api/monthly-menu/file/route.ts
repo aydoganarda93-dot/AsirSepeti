@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ensureCustomerOrAdmin } from "@/lib/api-auth";
 import {
   buildMonthlyMenuFileResponse,
-  getActiveMenuForMonth,
+  resolveMenuForRequest,
   resolveYearMonthParam,
 } from "@/lib/monthly-menu-server";
 import { isSupabaseStorageConfigured } from "@/lib/supabase-admin";
@@ -16,8 +16,8 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const yearMonth = resolveYearMonthParam(searchParams.get("yearMonth"));
-  const active = await getActiveMenuForMonth(yearMonth);
+  const requestedYearMonth = resolveYearMonthParam(searchParams.get("yearMonth"));
+  const active = await resolveMenuForRequest(requestedYearMonth);
   if (!active) {
     return new NextResponse("Menü bulunamadı", { status: 404 });
   }

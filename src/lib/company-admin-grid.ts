@@ -3,6 +3,11 @@ import type { ItemCategory, Shift } from "@prisma/client";
 /** `Company.adminNote` içindeki grid öneki — İşletmeler sayfası ile aynı */
 export const GRID_PREFIX = "__GRID__:";
 
+/** Gün kapanışında silinmez — elle yazılan sabit işletme bilgisi */
+export const GRID_PERSISTENT_FIELD_KEYS = ["cesit", "aciklama"] as const;
+
+export type GridPersistentFieldKey = (typeof GRID_PERSISTENT_FIELD_KEYS)[number];
+
 export type CompanyGridPayload = {
   cesit: string;
   oglen: string;
@@ -47,6 +52,27 @@ const GRID_KEYS_NUMERIC: readonly CompanyGridNumericKey[] = [
   "geceEkmek",
   "geceKumanya",
 ];
+
+/** Yeni güne geçerken: sabit alanları koru, günlük adetleri sıfırla */
+export function freshDailyGridPayload(carryFrom: CompanyGridPayload): CompanyGridPayload {
+  const next = emptyGridPayload();
+  for (const key of GRID_PERSISTENT_FIELD_KEYS) {
+    next[key] = carryFrom[key] ?? "";
+  }
+  return next;
+}
+
+/** Geçmiş gün görünümü: arşiv + bugünkü sabit alanlar */
+export function mergeArchivedWithPersistentFields(
+  archived: CompanyGridPayload,
+  live: CompanyGridPayload,
+): CompanyGridPayload {
+  const merged: CompanyGridPayload = { ...archived };
+  for (const key of GRID_PERSISTENT_FIELD_KEYS) {
+    merged[key] = live[key] ?? "";
+  }
+  return merged;
+}
 
 export function emptyGridPayload(): CompanyGridPayload {
   return {

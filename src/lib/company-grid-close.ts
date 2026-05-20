@@ -1,10 +1,15 @@
 import { addDays } from "date-fns";
 import { db } from "@/lib/db";
-import { emptyGridPayload, parseAdminNoteToGrid, serializeGridToAdminNote } from "@/lib/company-admin-grid";
+import {
+  freshDailyGridPayload,
+  parseAdminNoteToGrid,
+  serializeGridToAdminNote,
+} from "@/lib/company-admin-grid";
 import { istanbulCalendarNoonForInstant, liveGridPeriodStart } from "@/lib/company-grid-period";
 
 /**
- * Tamamlanmış işletme günlerini (öğle–öğle) arşivler, adminNote grid’ini sıfırlar.
+ * Tamamlanmış işletme günlerini (öğle–öğle) arşivler; günlük adetleri sıfırlar.
+ * Çeşit ve Açıklama (sabit alanlar) canlı grid’de kalır.
  * `gridLastArchivedPeriodStart`: son başarıyla arşivlenen periyodun `periodStart` değeri.
  */
 export async function runCompanyGridDayClose(now = new Date()): Promise<{ archivedPeriods: number }> {
@@ -40,8 +45,8 @@ export async function runCompanyGridDayClose(now = new Date()): Promise<{ archiv
           },
           update: { payload },
         });
-        const nextLivePayload = emptyGridPayload();
-        nextLivePayload.cesit = parseAdminNoteToGrid(c.adminNote).cesit;
+        const prev = parseAdminNoteToGrid(c.adminNote);
+        const nextLivePayload = freshDailyGridPayload(prev);
 
         await tx.company.update({
           where: { id: c.id },

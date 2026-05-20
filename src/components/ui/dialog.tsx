@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 type DialogContextValue = {
@@ -30,21 +31,56 @@ export function Dialog({
   return <DialogContext.Provider value={{ open, onOpenChange }}>{children}</DialogContext.Provider>;
 }
 
-export function DialogContent({ className, children }: { className?: string; children: React.ReactNode }) {
+export function DialogContent({
+  className,
+  children,
+  size = "default",
+}: {
+  className?: string;
+  children: React.ReactNode;
+  /** Menü gibi geniş içerikler için neredeyse tam ekran */
+  size?: "default" | "fullscreen";
+}) {
   const { open, onOpenChange } = useDialogContext();
-  if (!open) return null;
+  const [mounted, setMounted] = React.useState(false);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!open || !mounted) return null;
+
+  const fullscreen = size === "fullscreen";
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] overflow-hidden">
       <button
-        className="absolute inset-0 bg-black/40"
+        type="button"
+        className="fixed inset-0 bg-black/45"
         aria-label="Dialog kapat"
         onClick={() => onOpenChange(false)}
       />
-      <div className={cn("relative z-10 w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-xl", className)}>
-        {children}
+      <div
+        className={cn(
+          "flex h-full min-h-full items-center justify-center",
+          fullscreen ? "p-1 sm:p-2" : "overflow-y-auto p-4 sm:p-6",
+        )}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          className={cn(
+            "relative z-10 w-full rounded-xl border border-slate-200 bg-white shadow-xl",
+            !fullscreen && "max-w-lg",
+            className,
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {children}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

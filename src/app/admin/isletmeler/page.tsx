@@ -11,6 +11,7 @@ import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import {
   emptyGridPayload,
+  mergeArchivedWithPersistentFields,
   parseAdminNoteToGrid,
   serializeGridToAdminNote,
   type CompanyGridPayload,
@@ -113,7 +114,7 @@ function buildRowsFromArchive(companies: Company[], byCompany: Map<string, Compa
   return companies.map((company, index) => {
     const archived = byCompany.get(company.id) ?? emptyGridPayload();
     const live = parseAdminNoteToGrid(company.adminNote);
-    const parsed = { ...archived, cesit: live.cesit };
+    const parsed = mergeArchivedWithPersistentFields(archived, live);
     return {
       id: company.id,
       sn: index + 1,
@@ -703,7 +704,10 @@ export default function AdminCompaniesPage() {
           </p>
         ) : (
           <p className="max-w-xl text-sm text-slate-600">
-            Seçili güne ait onaylı sipariş adetleri, ilgili hücrede «sipariş» etiketiyle gösterilir (teslim tarihi bu günle aynı kayıtlar).
+            <span className="font-medium text-slate-700">Çeşit</span> ve{" "}
+            <span className="font-medium text-slate-700">Açıklama</span> sabit kalır (gün kapanışında silinmez).
+            Öğle / Akşam / Gece sütunları her gün sıfırlanır; geçmiş günler «Gün Seçin» ile arşivden görülür.
+            Bugünkü sipariş adetleri ilgili hücrede mavi etiketle gösterilir.
           </p>
         )}
       </div>
@@ -860,7 +864,9 @@ export default function AdminCompaniesPage() {
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="col-span-2">
-                <p className="mb-1 text-xs font-medium text-slate-500">Çeşit</p>
+                <p className="mb-1 text-xs font-medium text-slate-500">
+                  Çeşit <span className="font-normal text-slate-400">(sabit)</span>
+                </p>
                 <InlineField
                   field="cesit"
                   value={getDraftOrRow(row, "cesit")}
@@ -937,7 +943,9 @@ export default function AdminCompaniesPage() {
                           suppressOrderHint={isCellDirty(row.id, "geceKumanya")} readOnly={gridReadOnly} editing={isEditing(row.id, "geceKumanya")} onStartEdit={() => beginEditCell(row.id, "geceKumanya", row.geceKumanya)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "geceKumanya", v)} onCancel={cancelEditCell} />
               </div>
               <div className="col-span-2">
-                <p className="mb-1 text-xs font-medium text-slate-500">Açıklama</p>
+                <p className="mb-1 text-xs font-medium text-slate-500">
+                  Açıklama <span className="font-normal text-slate-400">(sabit)</span>
+                </p>
                 <InlineField field="aciklama" value={getDraftOrRow(row, "aciklama")} readOnly={gridReadOnly} editing={isEditing(row.id, "aciklama")} onStartEdit={() => beginEditCell(row.id, "aciklama", row.aciklama)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aciklama", v)} onCancel={cancelEditCell} />
               </div>
             </div>
