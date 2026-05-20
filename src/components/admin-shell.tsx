@@ -92,7 +92,7 @@ export function AdminShell({ children, user, pendingWhatsapp }: Props) {
     { href: "/admin", label: "Ana sayfa", icon: Home },
     { href: "/admin/isletmeler", label: "İşletmeler", icon: Building2 },
     { href: "/admin/siparis-gecmisi", label: "Sipariş geçmişi", icon: ClipboardList },
-    { href: "/admin/catering", label: "Catering yönetimi", icon: UtensilsCrossed },
+    { href: "/admin/catering", label: "Bekleyen siparişlerim", icon: UtensilsCrossed },
     { href: "/admin/manual-yemek", label: "Manuel yemek", icon: PlusCircle },
     { href: "/admin/aylik-menu", label: "Menü yönetimi", icon: FileText },
     {

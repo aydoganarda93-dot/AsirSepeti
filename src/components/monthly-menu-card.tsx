@@ -3,11 +3,13 @@
 import { FileText, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { MonthlyMenuPdfDialog } from "@/components/monthly-menu-pdf-dialog";
+import type { MonthlyMenuKind } from "@/lib/monthly-menu-constants";
 import { cn } from "@/lib/utils";
 
 type MenuJson = {
   available: boolean;
   yearMonth?: string;
+  kind?: MonthlyMenuKind;
   configured?: boolean;
 };
 
@@ -51,6 +53,7 @@ export function MonthlyMenuCard() {
   }
 
   const yearMonth = data?.yearMonth ?? "";
+  const menuKind = data?.kind ?? "pdf";
   const available = Boolean(data?.available && yearMonth);
 
   return (
@@ -68,7 +71,9 @@ export function MonthlyMenuCard() {
           </span>
           <span className="min-w-0">
             <span className="block leading-tight">Aylık yemek menüsünü gör</span>
-            <span className="text-[11px] font-normal text-slate-500">PDF önizleme</span>
+            <span className="text-[11px] font-normal text-slate-500">
+              {menuKind === "xlsx" ? "Excel önizleme" : "PDF önizleme"}
+            </span>
           </span>
         </button>
       ) : (
@@ -86,7 +91,12 @@ export function MonthlyMenuCard() {
             : "Bu ayın menüsü henüz yüklenmedi."}
         </div>
       )}
-      <MonthlyMenuPdfDialog open={dialogOpen} onOpenChange={setDialogOpen} yearMonth={yearMonth} />
+      <MonthlyMenuPdfDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        yearMonth={yearMonth}
+        kind={menuKind}
+      />
     </>
   );
 }

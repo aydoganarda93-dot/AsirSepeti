@@ -5,7 +5,11 @@ import { ensureAdmin } from "@/lib/api-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/categories";
-import { computeGridDeltasFromOrderItems, mergeCompanyAdminNoteWithDeltas } from "@/lib/company-admin-grid";
+import {
+  computeGridDeltasFromOrderItems,
+  hasGridDeltas,
+  mergeCompanyAdminNoteWithDeltas,
+} from "@/lib/company-admin-grid";
 import { createOrderActivity, ORDER_ACTIVITY_TYPES } from "@/lib/order-activity";
 import { parseDateOnlyUtc } from "@/lib/date";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
@@ -22,16 +26,6 @@ const CREATE_ORDER_RATE_LIMIT = {
   windowMs: 60 * 60 * 1000, // 1 saat
   max: 20,
 };
-
-function hasGridDeltas(deltas: ReturnType<typeof computeGridDeltasFromOrderItems>): boolean {
-  return (
-    deltas.kumanya > 0 ||
-    deltas.oglen > 0 ||
-    deltas.aksam > 0 ||
-    deltas.oglenEkmek > 0 ||
-    deltas.aksamEkmek > 0
-  );
-}
 
 function toItems(quantities: ShiftPayload) {
   const shifts: Array<{ key: keyof ShiftPayload; shift: Shift }> = [

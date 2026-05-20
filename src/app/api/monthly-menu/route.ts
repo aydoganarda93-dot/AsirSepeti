@@ -27,6 +27,7 @@ export async function GET(request: Request) {
       yearMonth,
       url,
       fileName: active.fileName,
+      kind: active.kind,
       updatedAt: active.updatedAt?.toISOString() ?? null,
       expiresIn: MONTHLY_MENU_SIGNED_TTL_SEC,
     });

@@ -58,7 +58,7 @@ export default function AdminMonthlyMenuPage() {
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!file) {
-      toast.message("Önce PDF seçin.");
+      toast.message("Önce PDF veya Excel dosyası seçin.");
       return;
     }
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
@@ -117,9 +117,9 @@ export default function AdminMonthlyMenuPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <FileText className="h-5 w-5" aria-hidden />
-            PDF yükleme
+            Menü dosyası yükleme
           </CardTitle>
-          <CardDescription>Yalnızca PDF; boyut sınırı 12 MB.</CardDescription>
+          <CardDescription>PDF veya Excel (.xlsx); boyut sınırı 12 MB.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
@@ -181,13 +181,13 @@ export default function AdminMonthlyMenuPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700" htmlFor="pdf">
-                    PDF dosyası
+                  <label className="mb-1 block text-xs font-semibold text-slate-700" htmlFor="menu-file">
+                    PDF veya Excel (.xlsx)
                   </label>
                   <Input
-                    id="pdf"
+                    id="menu-file"
                     type="file"
-                    accept="application/pdf,.pdf"
+                    accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
                     disabled={uploading}
                     onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                   />

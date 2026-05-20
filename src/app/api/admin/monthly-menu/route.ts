@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { ensureAdmin } from "@/lib/api-auth";
 import { db } from "@/lib/db";
 import { formatUtcYmdFromOffset } from "@/lib/date";
-import { MONTHLY_MENU_BUCKET, MONTHLY_MENU_MAX_BYTES, MONTHLY_MENU_SIGNED_TTL_SEC } from "@/lib/monthly-menu-constants";
+import {
+  contentTypeForMenuKind,
+  MONTHLY_MENU_BUCKET,
+  MONTHLY_MENU_SIGNED_TTL_SEC,
+  validateMonthlyMenuFile,
+} from "@/lib/monthly-menu-constants";
 import { createSignedMenuUrl, getSettingsRow } from "@/lib/monthly-menu-server";
 import { getSupabaseAdmin, isSupabaseStorageConfigured } from "@/lib/supabase-admin";
 
@@ -50,7 +55,7 @@ export async function POST(request: Request) {
 
   const file = formData.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "PDF dosyası gerekli (alan adı: file)." }, { status: 400 });
+    return NextResponse.json({ error: "Dosya gerekli (alan adı: file)." }, { status: 400 });
   }
 
   const rawYm = formData.get("yearMonth");
@@ -59,26 +64,12 @@ export async function POST(request: Request) {
       ? rawYm
       : formatUtcYmdFromOffset(0).slice(0, 7);
 
-  const lower = file.name.toLowerCase();
-  const mimeOk =
-    file.type === "application/pdf" || file.type === "" || file.type === "application/x-pdf";
-  if (!mimeOk && !lower.endsWith(".pdf")) {
-    return NextResponse.json({ error: "Yalnızca PDF kabul edilir." }, { status: 400 });
-  }
-  if (!lower.endsWith(".pdf")) {
-    return NextResponse.json({ error: "Dosya adı .pdf ile bitmeli." }, { status: 400 });
-  }
-  if (file.size > MONTHLY_MENU_MAX_BYTES) {
-    return NextResponse.json(
-      { error: `Dosya çok büyük (en fazla ${MONTHLY_MENU_MAX_BYTES / 1024 / 1024} MB).` },
-      { status: 400 },
-    );
-  }
-
   const buf = Buffer.from(await file.arrayBuffer());
-  if (buf.length < 5 || buf.subarray(0, 5).toString() !== "%PDF-") {
-    return NextResponse.json({ error: "Geçerli bir PDF dosyası yükleyin." }, { status: 400 });
+  const validated = validateMonthlyMenuFile(file, buf);
+  if (!validated.ok) {
+    return NextResponse.json({ error: validated.error }, { status: 400 });
   }
+  const { kind } = validated;
 
   const supabase = getSupabaseAdmin();
   const prev = await db.appSettings.findUnique({ where: { id: 1 } });
@@ -86,9 +77,10 @@ export async function POST(request: Request) {
     await supabase.storage.from(MONTHLY_MENU_BUCKET).remove([prev.monthlyMenuStoragePath]);
   }
 
-  const objectPath = `${yearMonth}/${randomUUID()}.pdf`;
+  const ext = kind === "pdf" ? "pdf" : "xlsx";
+  const objectPath = `${yearMonth}/${randomUUID()}.${ext}`;
   const { error: upErr } = await supabase.storage.from(MONTHLY_MENU_BUCKET).upload(objectPath, buf, {
-    contentType: "application/pdf",
+    contentType: contentTypeForMenuKind(kind),
     upsert: false,
   });
 

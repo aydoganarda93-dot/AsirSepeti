@@ -6,27 +6,76 @@ export const GRID_PREFIX = "__GRID__:";
 export type CompanyGridPayload = {
   cesit: string;
   oglen: string;
-  oglenDetay: string;
   oglenEkmek: string;
+  oglenEkmekArasi: string;
+  oglenKumanya: string;
   aksam: string;
   aksamEkmek: string;
-  kumanya: string;
+  aksamEkmekArasi: string;
+  aksamKumanya: string;
+  gece: string;
+  geceEkmek: string;
+  geceKumanya: string;
   aciklama: string;
 };
 
-const GRID_KEYS_NUMERIC = ["kumanya", "oglen", "aksam", "oglenEkmek", "aksamEkmek"] as const;
+export type CompanyGridNumericKey =
+  | "oglen"
+  | "oglenEkmek"
+  | "oglenEkmekArasi"
+  | "oglenKumanya"
+  | "aksam"
+  | "aksamEkmek"
+  | "aksamEkmekArasi"
+  | "aksamKumanya"
+  | "gece"
+  | "geceEkmek"
+  | "geceKumanya";
+
+export type CompanyGridNumericDeltas = Record<CompanyGridNumericKey, number>;
+
+const GRID_KEYS_NUMERIC: readonly CompanyGridNumericKey[] = [
+  "oglen",
+  "oglenEkmek",
+  "oglenEkmekArasi",
+  "oglenKumanya",
+  "aksam",
+  "aksamEkmek",
+  "aksamEkmekArasi",
+  "aksamKumanya",
+  "gece",
+  "geceEkmek",
+  "geceKumanya",
+];
 
 export function emptyGridPayload(): CompanyGridPayload {
   return {
     cesit: "",
     oglen: "",
-    oglenDetay: "",
     oglenEkmek: "",
+    oglenEkmekArasi: "",
+    oglenKumanya: "",
     aksam: "",
     aksamEkmek: "",
-    kumanya: "",
+    aksamEkmekArasi: "",
+    aksamKumanya: "",
+    gece: "",
+    geceEkmek: "",
+    geceKumanya: "",
     aciklama: "",
   };
+}
+
+function strField(raw: unknown): string {
+  return raw == null ? "" : String(raw);
+}
+
+/** Eski `kumanya` sütunu → gece kumanya (birleşik gece verisi en iyi tahmin) */
+function migrateLegacyKumanya(parsed: Record<string, unknown>): string {
+  const legacy = strField(parsed.kumanya).trim();
+  const existing = strField(parsed.geceKumanya).trim();
+  if (existing) return existing;
+  return legacy;
 }
 
 export function parseAdminNoteToGrid(adminNote: string | null): CompanyGridPayload {
@@ -34,16 +83,21 @@ export function parseAdminNoteToGrid(adminNote: string | null): CompanyGridPaylo
 
   if (adminNote.startsWith(GRID_PREFIX)) {
     try {
-      const parsed = JSON.parse(adminNote.replace(GRID_PREFIX, "")) as Partial<CompanyGridPayload>;
+      const parsed = JSON.parse(adminNote.replace(GRID_PREFIX, "")) as Record<string, unknown>;
       return {
-        cesit: parsed.cesit ?? "",
-        oglen: parsed.oglen ?? "",
-        oglenDetay: parsed.oglenDetay ?? "",
-        oglenEkmek: parsed.oglenEkmek ?? "",
-        aksam: parsed.aksam ?? "",
-        aksamEkmek: parsed.aksamEkmek ?? "",
-        kumanya: parsed.kumanya ?? "",
-        aciklama: parsed.aciklama ?? "",
+        cesit: strField(parsed.cesit),
+        oglen: strField(parsed.oglen),
+        oglenEkmek: strField(parsed.oglenEkmek),
+        oglenEkmekArasi: strField(parsed.oglenEkmekArasi),
+        oglenKumanya: strField(parsed.oglenKumanya),
+        aksam: strField(parsed.aksam),
+        aksamEkmek: strField(parsed.aksamEkmek),
+        aksamEkmekArasi: strField(parsed.aksamEkmekArasi),
+        aksamKumanya: strField(parsed.aksamKumanya),
+        gece: strField(parsed.gece),
+        geceEkmek: strField(parsed.geceEkmek),
+        geceKumanya: migrateLegacyKumanya(parsed),
+        aciklama: strField(parsed.aciklama),
       };
     } catch {
       return { ...emptyGridPayload(), aciklama: adminNote };
@@ -54,16 +108,7 @@ export function parseAdminNoteToGrid(adminNote: string | null): CompanyGridPaylo
 }
 
 export function serializeGridToAdminNote(payload: CompanyGridPayload): string {
-  const body: CompanyGridPayload = {
-    cesit: payload.cesit,
-    oglen: payload.oglen,
-    oglenDetay: payload.oglenDetay,
-    oglenEkmek: payload.oglenEkmek,
-    aksam: payload.aksam,
-    aksamEkmek: payload.aksamEkmek,
-    kumanya: payload.kumanya,
-    aciklama: payload.aciklama,
-  };
+  const body: CompanyGridPayload = { ...payload };
   return `${GRID_PREFIX}${JSON.stringify(body)}`;
 }
 
@@ -90,50 +135,60 @@ export type OrderItemLike = {
   quantity: number;
 };
 
+function emptyNumericDeltas(): CompanyGridNumericDeltas {
+  return {
+    oglen: 0,
+    oglenEkmek: 0,
+    oglenEkmekArasi: 0,
+    oglenKumanya: 0,
+    aksam: 0,
+    aksamEkmek: 0,
+    aksamEkmekArasi: 0,
+    aksamKumanya: 0,
+    gece: 0,
+    geceEkmek: 0,
+    geceKumanya: 0,
+  };
+}
+
 /**
- * Sipariş kalemlerinden İşletmeler tablosu sütunlarına eklenecek adetler.
- * - Kumanya sütunu: tüm vardiyalarda KUMANYA + gece (NIGHT) yemek (OGLEN_YEMEGI)
- * - Öğlen sayı: sabah yemek
- * - Akşam sayı: akşam vardiyası yemek
- * - Ekmek: sabah → öğlen ekmek; akşam+gece → akşam ekmek
+ * Sipariş kalemlerinden İşletmeler tablosu hücrelerine eklenecek adetler.
+ * Her (shift, category) yalnızca ilgili payload alanına yansır.
  */
-export function computeGridDeltasFromOrderItems(items: OrderItemLike[]): {
-  kumanya: number;
-  oglen: number;
-  aksam: number;
-  oglenEkmek: number;
-  aksamEkmek: number;
-} {
-  let kumanya = 0;
-  let oglen = 0;
-  let aksam = 0;
-  let oglenEkmek = 0;
-  let aksamEkmek = 0;
+export function computeGridDeltasFromOrderItems(items: OrderItemLike[]): CompanyGridNumericDeltas {
+  const deltas = emptyNumericDeltas();
 
   for (const item of items) {
     const q = item.quantity;
     if (q <= 0) continue;
 
-    if (item.category === "KUMANYA") {
-      kumanya += q;
-    }
-    if (item.category === "OGLEN_YEMEGI") {
-      if (item.shift === "MORNING") oglen += q;
-      if (item.shift === "EVENING") aksam += q;
-      if (item.shift === "NIGHT") kumanya += q;
-    }
-    if (item.category === "EKMEK_ARASI" || item.category === "DUZ_EKMEK") {
-      if (item.shift === "MORNING") oglenEkmek += q;
-      if (item.shift === "EVENING" || item.shift === "NIGHT") aksamEkmek += q;
+    if (item.shift === "MORNING") {
+      if (item.category === "OGLEN_YEMEGI") deltas.oglen += q;
+      if (item.category === "DUZ_EKMEK") deltas.oglenEkmek += q;
+      if (item.category === "EKMEK_ARASI") deltas.oglenEkmekArasi += q;
+      if (item.category === "KUMANYA") deltas.oglenKumanya += q;
+    } else if (item.shift === "EVENING") {
+      if (item.category === "OGLEN_YEMEGI") deltas.aksam += q;
+      if (item.category === "DUZ_EKMEK") deltas.aksamEkmek += q;
+      if (item.category === "EKMEK_ARASI") deltas.aksamEkmekArasi += q;
+      if (item.category === "KUMANYA") deltas.aksamKumanya += q;
+    } else if (item.shift === "NIGHT") {
+      if (item.category === "OGLEN_YEMEGI") deltas.gece += q;
+      if (item.category === "DUZ_EKMEK") deltas.geceEkmek += q;
+      if (item.category === "KUMANYA") deltas.geceKumanya += q;
     }
   }
 
-  return { kumanya, oglen, aksam, oglenEkmek, aksamEkmek };
+  return deltas;
+}
+
+export function hasGridDeltas(deltas: CompanyGridNumericDeltas): boolean {
+  return Object.values(deltas).some((v) => v > 0);
 }
 
 export function applyNumericDeltasToGridPayload(
   payload: CompanyGridPayload,
-  deltas: { kumanya: number; oglen: number; aksam: number; oglenEkmek: number; aksamEkmek: number },
+  deltas: CompanyGridNumericDeltas,
   sign: 1 | -1,
 ): CompanyGridPayload {
   const next: CompanyGridPayload = { ...payload };
@@ -148,7 +203,7 @@ export function applyNumericDeltasToGridPayload(
 
 export function mergeCompanyAdminNoteWithDeltas(
   adminNote: string | null,
-  deltas: { kumanya: number; oglen: number; aksam: number; oglenEkmek: number; aksamEkmek: number },
+  deltas: CompanyGridNumericDeltas,
   sign: 1 | -1,
 ): string {
   const parsed = parseAdminNoteToGrid(adminNote);

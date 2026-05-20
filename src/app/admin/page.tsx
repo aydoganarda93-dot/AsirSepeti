@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { Building2, ClipboardList, Package } from "lucide-react";
+import Link from "next/link";
 import { AdminModuleCard, type ModuleCardConfig } from "@/components/admin-module-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { authOptions } from "@/lib/auth";
@@ -9,7 +10,7 @@ import { formatDateOnlyTr, formatUtcYmdFromOffset } from "@/lib/date";
 
 const MODULES: ModuleCardConfig[] = [
   {
-    title: "Catering yönetimi",
+    title: "Bekleyen siparişlerim",
     description: "Bekleyen siparişleri onaylayın veya reddedin; operasyonun ana akışı.",
     href: "/admin/catering",
     iconKey: "UtensilsCrossed",
@@ -72,42 +73,57 @@ export default async function AdminPage() {
       </header>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-3">
-        <Card className="border-slate-200/90 shadow-sm ring-1 ring-slate-900/5">
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
-              <Package className="h-4 w-4" aria-hidden />
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Bugünkü sipariş</p>
-              <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{stats.ordersToday}</p>
-              <p className="text-[11px] text-slate-500">Bu teslim günü için kayıtlı sipariş sayısı</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-slate-200/90 shadow-sm ring-1 ring-slate-900/5">
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
-              <ClipboardList className="h-4 w-4" aria-hidden />
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Bekleyen onay</p>
-              <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{stats.pendingApprovalsToday}</p>
-              <p className="text-[11px] text-slate-500">Bugün teslimi için onay bekleyen</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-slate-200/90 shadow-sm ring-1 ring-slate-900/5">
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-800">
-              <Building2 className="h-4 w-4" aria-hidden />
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Aktif işletme</p>
-              <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{stats.companyCount}</p>
-              <p className="text-[11px] text-slate-500">Sistemde kayıtlı firma sayısı</p>
-            </div>
-          </CardContent>
-        </Card>
+        <Link
+          href="/admin/siparis-gecmisi"
+          className="block rounded-xl transition-colors hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+        >
+          <Card className="h-full border-slate-200/90 shadow-sm ring-1 ring-slate-900/5 transition-shadow hover:shadow-md">
+            <CardContent className="flex items-start gap-3 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                <Package className="h-4 w-4" aria-hidden />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Bugünkü sipariş</p>
+                <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{stats.ordersToday}</p>
+                <p className="text-[11px] text-slate-500">Bu teslim günü için kayıtlı sipariş sayısı</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link
+          href="/admin/catering"
+          className="block rounded-xl transition-colors hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+        >
+          <Card className="h-full border-slate-200/90 shadow-sm ring-1 ring-slate-900/5 transition-shadow hover:shadow-md">
+            <CardContent className="flex items-start gap-3 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
+                <ClipboardList className="h-4 w-4" aria-hidden />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Bekleyen onay</p>
+                <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{stats.pendingApprovalsToday}</p>
+                <p className="text-[11px] text-slate-500">Bugün teslimi için onay bekleyen</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link
+          href="/admin/isletmeler"
+          className="block rounded-xl transition-colors hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+        >
+          <Card className="h-full border-slate-200/90 shadow-sm ring-1 ring-slate-900/5 transition-shadow hover:shadow-md">
+            <CardContent className="flex items-start gap-3 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-800">
+                <Building2 className="h-4 w-4" aria-hidden />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Aktif işletme</p>
+                <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{stats.companyCount}</p>
+                <p className="text-[11px] text-slate-500">Sistemde kayıtlı firma sayısı</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
       </section>
 
       <section>

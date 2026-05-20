@@ -1,9 +1,12 @@
 "use client";
 
 import { Download, Edit2, FileSpreadsheet, Plus, Save } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CompaniesDataGrid } from "@/components/admin/companies-data-grid";
+import { applyGridDemoOverlay } from "@/components/admin/companies-grid-utils";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import {
@@ -49,16 +52,33 @@ type RowData = {
   whatsappPhoneE164: string;
   cesit: string;
   oglen: string;
-  oglenDetay: string;
   oglenEkmek: string;
+  oglenEkmekArasi: string;
+  oglenKumanya: string;
   aksam: string;
   aksamEkmek: string;
-  kumanya: string;
+  aksamEkmekArasi: string;
+  aksamKumanya: string;
+  gece: string;
+  geceEkmek: string;
+  geceKumanya: string;
   aciklama: string;
   isNew: boolean;
 };
 
-const NUMERIC_FIELDS = new Set<keyof RowData>(["oglen", "oglenEkmek", "aksam", "aksamEkmek", "kumanya"]);
+const NUMERIC_FIELDS = new Set<keyof RowData>([
+  "oglen",
+  "oglenEkmek",
+  "oglenEkmekArasi",
+  "oglenKumanya",
+  "aksam",
+  "aksamEkmek",
+  "aksamEkmekArasi",
+  "aksamKumanya",
+  "gece",
+  "geceEkmek",
+  "geceKumanya",
+]);
 
 function normalizeNumericCell(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -67,9 +87,12 @@ function normalizeNumericCell(raw: string): string {
   return String(n);
 }
 
-function displayNumeric(value: string): string {
+function displayNumeric(value: string): string | null {
   const t = value.trim();
-  return t === "" ? "0" : t;
+  if (!t || t === "0") return null;
+  const n = parseInt(t.replace(/\D/g, ""), 10);
+  if (!n || n <= 0) return null;
+  return String(n);
 }
 
 function buildRows(companies: Company[]): RowData[] {
@@ -155,12 +178,6 @@ function InlineField({
   displayMode?: "default" | "cesit";
 }) {
   void _field;
-  const hasOrderHint = Boolean(orderHint);
-  const orderHintNode = orderHint ? (
-    <span className="text-sm font-semibold leading-tight text-slate-950 tabular-nums">
-      {orderHint}
-    </span>
-  ) : null;
 
   if (editing && !readOnly) {
     return (
@@ -198,17 +215,30 @@ function InlineField({
   }
 
   const show = numeric ? displayNumeric(value) : value.trim();
-  const shouldPromoteOrderHint = !suppressOrderHint && numeric && show === "0" && hasOrderHint;
+  const hintNum =
+    orderHint && numeric
+      ? (() => {
+          const m = /^(\d+)/.exec(orderHint.replace(/\s*(kum|düz|arası)\s*$/i, "").trim());
+          return m ? parseInt(m[1], 10) : 0;
+        })()
+      : 0;
+  const shouldPromoteOrderHint = !suppressOrderHint && numeric && !show && hintNum > 0;
 
   const mainBlock =
     displayMode === "cesit" ? (
       <CesitDisplay value={value} />
     ) : shouldPromoteOrderHint ? (
-      orderHintNode
-    ) : numeric && show === "0" ? (
-      <span className="text-slate-400">{placeholder ?? "0"}</span>
+      <span className="inline-flex rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-sm font-bold tabular-nums text-blue-800">
+        {hintNum}
+      </span>
+    ) : numeric && !show ? (
+      <span className="text-slate-300">—</span>
     ) : !numeric && !show ? (
-      <span className="text-slate-400">—</span>
+      <span className="text-slate-300">—</span>
+    ) : numeric && show ? (
+      <span className="inline-flex rounded-md border border-slate-200 bg-slate-900/[0.06] px-2 py-0.5 text-sm font-bold tabular-nums text-slate-900">
+        {show}
+      </span>
     ) : (
       show
     );
@@ -244,10 +274,13 @@ function InlineField({
 
 export default function AdminCompaniesPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const gridDemo = searchParams.get("gridDemo") === "1";
   const [search, setSearch] = useState("");
   const [patchById, setPatchById] = useState<Record<string, Partial<RowData>>>({});
   const [creatingRow, setCreatingRow] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [dirtyIds, setDirtyIds] = useState<string[]>([]);
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -317,9 +350,15 @@ export default function AdminCompaniesPage() {
       m.set(c.companyId, {
         oglenOrderLine: c.oglenOrderLine,
         oglenEkmekOrderLine: c.oglenEkmekOrderLine,
+        oglenEkmekArasiOrderLine: c.oglenEkmekArasiOrderLine,
+        oglenKumanyaOrderLine: c.oglenKumanyaOrderLine,
         aksamOrderLine: c.aksamOrderLine,
         aksamEkmekOrderLine: c.aksamEkmekOrderLine,
-        kumanyaOrderLine: c.kumanyaOrderLine,
+        aksamEkmekArasiOrderLine: c.aksamEkmekArasiOrderLine,
+        aksamKumanyaOrderLine: c.aksamKumanyaOrderLine,
+        geceOrderLine: c.geceOrderLine,
+        geceEkmekOrderLine: c.geceEkmekOrderLine,
+        geceKumanyaOrderLine: c.geceKumanyaOrderLine,
       });
     }
     return m;
@@ -372,6 +411,11 @@ export default function AdminCompaniesPage() {
   const visibleRows = useMemo(
     () => rows.filter((row) => row.companyName.toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr"))),
     [rows, search],
+  );
+
+  const displayRows = useMemo(
+    () => applyGridDemoOverlay(visibleRows, gridDemo),
+    [visibleRows, gridDemo],
   );
 
   const editingRow = useMemo(
@@ -432,6 +476,81 @@ export default function AdminCompaniesPage() {
     setDraftValue("");
   }, []);
 
+  async function persistRow(row: RowData) {
+    const response = await fetch(`/api/companies/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: row.companyName.trim(),
+        adminNote: serializeGridToAdminNote({
+          cesit: row.cesit,
+          oglen: normalizeNumericCell(row.oglen),
+          oglenEkmek: normalizeNumericCell(row.oglenEkmek),
+          oglenEkmekArasi: normalizeNumericCell(row.oglenEkmekArasi),
+          oglenKumanya: normalizeNumericCell(row.oglenKumanya),
+          aksam: normalizeNumericCell(row.aksam),
+          aksamEkmek: normalizeNumericCell(row.aksamEkmek),
+          aksamEkmekArasi: normalizeNumericCell(row.aksamEkmekArasi),
+          aksamKumanya: normalizeNumericCell(row.aksamKumanya),
+          gece: normalizeNumericCell(row.gece),
+          geceEkmek: normalizeNumericCell(row.geceEkmek),
+          geceKumanya: normalizeNumericCell(row.geceKumanya),
+          aciklama: row.aciklama,
+        }),
+        whatsappPhoneE164: row.whatsappPhoneE164.trim() ? row.whatsappPhoneE164.trim() : null,
+      }),
+    });
+    if (!response.ok) throw new Error("Satır kaydedilemedi.");
+  }
+
+  async function handleSaveRow(rowId: string) {
+    if (gridReadOnly) {
+      toast.info("Geçmiş gün salt okunur; kayıt yapılamaz.");
+      return;
+    }
+
+    if (cellFocus?.rowId === rowId) {
+      const pending = cellFocus;
+      const next = NUMERIC_FIELDS.has(pending.field)
+        ? normalizeNumericCell(draftValue)
+        : draftValue;
+      flushSync(() => {
+        setPatchById((prev) => ({
+          ...prev,
+          [pending.rowId]: { ...prev[pending.rowId], [pending.field]: next },
+        }));
+        setDirtyIds((prev) => (prev.includes(pending.rowId) ? prev : [...prev, pending.rowId]));
+        setCellFocus(null);
+        setDraftValue("");
+      });
+    }
+
+    const row = rowsRef.current.find((r) => r.id === rowId);
+    if (!row) return;
+    if (!row.companyName.trim()) {
+      toast.error("Firma adı boş bırakılamaz.");
+      return;
+    }
+
+    setSavingRowId(rowId);
+    try {
+      await persistRow(row);
+      setDirtyIds((prev) => prev.filter((id) => id !== rowId));
+      setPatchById((prev) => {
+        const next = { ...prev };
+        delete next[rowId];
+        return next;
+      });
+      toast.success("Satır kaydedildi.");
+      await companiesQuery.refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Kaydetme sırasında hata oluştu.");
+      throw error;
+    } finally {
+      setSavingRowId(null);
+    }
+  }
+
   async function handleSaveAll() {
     if (gridReadOnly) {
       toast.info("Geçmiş gün salt okunur; kayıt yapılamaz.");
@@ -470,25 +589,7 @@ export default function AdminCompaniesPage() {
           throw new Error("Firma adı boş bırakılamaz.");
         }
 
-        const response = await fetch(`/api/companies/${row.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: row.companyName.trim(),
-            adminNote: serializeGridToAdminNote({
-              cesit: row.cesit,
-              oglen: normalizeNumericCell(row.oglen),
-              oglenDetay: row.oglenDetay,
-              oglenEkmek: normalizeNumericCell(row.oglenEkmek),
-              aksam: normalizeNumericCell(row.aksam),
-              aksamEkmek: normalizeNumericCell(row.aksamEkmek),
-              kumanya: normalizeNumericCell(row.kumanya),
-              aciklama: row.aciklama,
-            }),
-            whatsappPhoneE164: row.whatsappPhoneE164.trim() ? row.whatsappPhoneE164.trim() : null,
-          }),
-        });
-        if (!response.ok) throw new Error("Satır kaydedilemedi.");
+        await persistRow(row);
       }
 
       toast.success("Tüm değişiklikler kaydedildi.");
@@ -511,12 +612,17 @@ export default function AdminCompaniesPage() {
       Firma: row.companyName,
       "WhatsApp (E.164)": row.whatsappPhoneE164 || "",
       Çeşit: row.cesit,
-      Öğlen: row.oglen,
-      "Öğlen detay": row.oglenDetay,
-      "Öğlen ekmek": row.oglenEkmek,
-      Akşam: row.aksam,
+      "Öğle adet": row.oglen,
+      "Öğle ekmek": row.oglenEkmek,
+      "Öğle ekmek arası": row.oglenEkmekArasi,
+      "Öğle kumanya": row.oglenKumanya,
+      "Akşam adet": row.aksam,
       "Akşam ekmek": row.aksamEkmek,
-      Kumanya: row.kumanya,
+      "Akşam ekmek arası": row.aksamEkmekArasi,
+      "Akşam kumanya": row.aksamKumanya,
+      "Gece adet": row.gece,
+      "Gece ekmek": row.geceEkmek,
+      "Gece kumanya": row.geceKumanya,
       Açıklama: row.aciklama,
     }));
     const worksheet = XLSX.utils.json_to_sheet(sheetRows);
@@ -559,23 +665,26 @@ export default function AdminCompaniesPage() {
     isEditing(row.id, field) ? draftValue : String(row[field] ?? "");
 
   return (
-    <main className="mx-auto max-w-[1600px] space-y-6 p-4 md:p-8">
+    <main className="mx-auto max-w-[1600px] space-y-6 bg-slate-50/50 p-4 md:p-8">
       <div className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">İşletmeler</h1>
         <p className="max-w-2xl text-sm text-slate-600">
-          Fabrika yemek takip formu. İşletme günü İstanbul saatiyle öğle 12:00–12:00 aralığıdır. Bugünün grid’i düzenlenebilir; geçmiş günler salt okunur. Hücreye tıklayarak düzenleyin; dışarı tıklayınca veya Enter ile kaydedilir. Değişiklikleri sağ üstten toplu kaydedin.
+          Fabrika yemek takip formu. Satır sonundaki kalem ile düzenleme moduna geçin; hücreye çift tıklayarak da açabilirsiniz. Sıfır değerler gizlenir; sipariş özeti ilgili hücrede gösterilir. Servis başlıklarındaki ok ile alt sütunları genişletin.
+          {gridDemo ? (
+            <span className="mt-1 block text-amber-700">Demo verisi aktif (?gridDemo=1).</span>
+          ) : null}
         </p>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-xl border border-slate-200/90 bg-slate-50/50 p-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
-          <label htmlFor="grid-period-date" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            İşletme günü (İstanbul, öğle başlangıcı)
+          <label htmlFor="grid-period-date" className="text-xs font-semibold tracking-wide text-slate-500">
+            Gün Seçin
           </label>
           <Input
             id="grid-period-date"
             type="date"
-            className="h-10 w-full max-w-[200px] border-slate-200 bg-white text-sm sm:w-auto"
+            className="h-10 w-full max-w-[200px] border-slate-200 bg-white text-sm focus-visible:ring-2 focus-visible:ring-slate-400/50 sm:w-auto"
             value={effectiveViewYmd}
             max={todayYmd || undefined}
             disabled={!todayYmd || metaQuery.isLoading}
@@ -594,18 +703,18 @@ export default function AdminCompaniesPage() {
           </p>
         ) : (
           <p className="max-w-xl text-sm text-slate-600">
-            Seçili güne ait siparişlerdeki adetler, Öğle/Akşam adet ve Kumanya hücrelerinin altında mavi satır olarak özetlenir (sipariş teslim tarihi bu günle aynı olan kayıtlar).
+            Seçili güne ait onaylı sipariş adetleri, ilgili hücrede «sipariş» etiketiyle gösterilir (teslim tarihi bu günle aynı kayıtlar).
           </p>
         )}
       </div>
 
-      <div className="flex flex-col gap-4 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between md:gap-6">
+      <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between md:gap-6">
         <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative min-w-0 flex-1 max-w-md">
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-10 border-slate-200 bg-slate-50/80 pr-3 pl-9 text-sm"
+              className="h-10 border-slate-200 bg-slate-50/80 pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-slate-400/40"
               placeholder="İşletme ara…"
               aria-label="İşletme filtrele"
             />
@@ -619,7 +728,8 @@ export default function AdminCompaniesPage() {
             type="button"
             variant="outline"
             size="sm"
-            className="h-10 shrink-0 border-slate-200"
+            className="h-10 w-10 shrink-0 border-slate-200 p-0 text-slate-700 hover:bg-slate-900 hover:text-white"
+            title="Yeni satır"
             disabled={creatingRow || gridReadOnly}
             onClick={async () => {
               try {
@@ -646,8 +756,7 @@ export default function AdminCompaniesPage() {
               }
             }}
           >
-            <Plus className="mr-1.5 h-4 w-4" />
-            Yeni satır
+            <Plus className="h-4 w-4" />
           </Button>
         </div>
 
@@ -658,8 +767,8 @@ export default function AdminCompaniesPage() {
             disabled={savingAll || !hasDirty || gridReadOnly}
             onClick={() => void handleSaveAll()}
             className={cn(
-              "h-9 gap-1.5 px-3",
-              hasDirty && "animate-pulse shadow-md ring-2 ring-amber-400/70 ring-offset-1 ring-offset-white",
+              "h-9 gap-1.5 bg-slate-900 px-4 hover:bg-slate-800",
+              hasDirty && "ring-2 ring-amber-400/60 ring-offset-2 ring-offset-white",
             )}
           >
             <Save className="h-4 w-4" />
@@ -694,221 +803,32 @@ export default function AdminCompaniesPage() {
         </div>
       </div>
 
-      {/* Desktop: editable grid */}
+      {/* Desktop: modern grid */}
       <div className="hidden md:block">
-        <div className="overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="max-h-[72vh] min-w-[920px] overflow-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-100/95 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <th className="sticky left-0 z-30 w-11 border-b border-r border-slate-200 bg-slate-100 px-2 py-2.5 text-center backdrop-blur-sm">
-                    #
-                  </th>
-                  <th className="sticky left-11 z-30 min-w-[160px] max-w-[220px] border-b border-r border-slate-200 bg-slate-100 px-3 py-2.5 backdrop-blur-sm">
-                    Firma
-                  </th>
-                  <th className="border-b border-r border-slate-200 bg-slate-100 px-2 py-2.5">Çeşit</th>
-                  <th className="border-b border-slate-200 bg-slate-100 px-2 py-2.5 text-center" colSpan={3}>
-                    Öğle servisi
-                  </th>
-                  <th className="border-b border-slate-200 bg-slate-100 px-2 py-2.5 text-center" colSpan={2}>
-                    Akşam servisi
-                  </th>
-                  <th className="border-b border-r border-slate-200 bg-slate-100 px-2 py-2.5 text-center">Kumanya</th>
-                  <th className="border-b border-slate-200 bg-slate-100 px-2 py-2.5">Açıklama</th>
-                </tr>
-                <tr className="border-b border-slate-200 bg-slate-50/90 text-[11px] font-medium text-slate-500">
-                  <th className="sticky left-0 z-20 border-r border-slate-200 bg-slate-50" />
-                  <th className="sticky left-11 z-20 border-r border-slate-200 bg-slate-50" />
-                  <th className="border-r border-slate-200 px-2 py-2" />
-                  <th className="border-r border-slate-200 px-2 py-2">Adet</th>
-                  <th className="border-r border-slate-200 px-2 py-2">Detay</th>
-                  <th className="border-r border-slate-200 px-2 py-2">Ekmek</th>
-                  <th className="border-r border-slate-200 px-2 py-2">Adet</th>
-                  <th className="border-r border-slate-200 px-2 py-2">Ekmek</th>
-                  <th className="border-r border-slate-200 px-2 py-2 text-center">Adet</th>
-                  <th className="px-2 py-2">Metin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((row, index) => {
-                  const oh = orderHintsByCompany.get(row.id);
-                  const zebra = index % 2 === 1;
-                  const stickyBg = zebra ? "bg-slate-50/95" : "bg-white";
-                  return (
-                    <tr
-                      key={row.id}
-                      className={cn(
-                        "group border-b border-slate-100 transition-colors hover:bg-sky-50/50",
-                        zebra && "bg-slate-50/70",
-                      )}
-                    >
-                      <td
-                        className={cn(
-                          "sticky left-0 z-20 border-r border-slate-200 px-2 py-2 text-center text-xs tabular-nums text-slate-500",
-                          stickyBg,
-                          "group-hover:bg-sky-50/80",
-                        )}
-                      >
-                        {index + 1}
-                      </td>
-                      <td
-                        className={cn(
-                          "sticky left-11 z-20 border-r border-slate-200 px-2 py-1.5 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.08)]",
-                          stickyBg,
-                          "group-hover:bg-sky-50/80",
-                        )}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            className="min-w-0 flex-1 truncate text-left text-sm font-bold text-slate-900 underline-offset-2 hover:underline"
-                            onClick={() => {
-                              if (!gridReadOnly) setEditingRowId(row.id);
-                            }}
-                          >
-                            {row.companyName || "Yeni İşletme"}
-                          </button>
-                          <button
-                            type="button"
-                            className="shrink-0 rounded p-1 text-slate-400 opacity-0 transition hover:bg-white hover:text-slate-700 group-hover:opacity-100"
-                            onClick={() => {
-                              if (!gridReadOnly) setEditingRowId(row.id);
-                            }}
-                            aria-label="İşletme düzenle"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="border-r border-slate-100 px-1 py-1 align-middle">
-                        <InlineField
-                          field="cesit"
-                          value={getDraftOrRow(row, "cesit")}
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "cesit")}
-                          displayMode="cesit"
-                          onStartEdit={() => beginEditCell(row.id, "cesit", row.cesit)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "cesit", v)}
-                          onCancel={cancelEditCell}
-                          className="justify-center"
-                          inputClassName="text-center"
-                        />
-                      </td>
-                      <td className="border-r border-slate-100 px-1 py-1">
-                        <InlineField
-                          field="oglen"
-                          value={getDraftOrRow(row, "oglen")}
-                          numeric
-                          placeholder="0"
-                          orderHint={oh?.oglenOrderLine ?? null}
-                          suppressOrderHint={isCellDirty(row.id, "oglen")}
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "oglen")}
-                          onStartEdit={() => beginEditCell(row.id, "oglen", row.oglen)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "oglen", v)}
-                          onCancel={cancelEditCell}
-                        />
-                      </td>
-                      <td className="border-r border-slate-100 px-1 py-1">
-                        <InlineField
-                          field="oglenDetay"
-                          value={getDraftOrRow(row, "oglenDetay")}
-                          placeholder="Detay"
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "oglenDetay")}
-                          onStartEdit={() => beginEditCell(row.id, "oglenDetay", row.oglenDetay)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "oglenDetay", v)}
-                          onCancel={cancelEditCell}
-                        />
-                      </td>
-                      <td className="border-r border-slate-100 px-1 py-1">
-                        <InlineField
-                          field="oglenEkmek"
-                          value={getDraftOrRow(row, "oglenEkmek")}
-                          numeric
-                          placeholder="0"
-                          orderHint={oh?.oglenEkmekOrderLine ?? null}
-                          suppressOrderHint={isCellDirty(row.id, "oglenEkmek")}
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "oglenEkmek")}
-                          onStartEdit={() => beginEditCell(row.id, "oglenEkmek", row.oglenEkmek)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "oglenEkmek", v)}
-                          onCancel={cancelEditCell}
-                        />
-                      </td>
-                      <td className="border-r border-slate-100 px-1 py-1">
-                        <InlineField
-                          field="aksam"
-                          value={getDraftOrRow(row, "aksam")}
-                          numeric
-                          placeholder="0"
-                          orderHint={oh?.aksamOrderLine ?? null}
-                          suppressOrderHint={isCellDirty(row.id, "aksam")}
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "aksam")}
-                          onStartEdit={() => beginEditCell(row.id, "aksam", row.aksam)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "aksam", v)}
-                          onCancel={cancelEditCell}
-                        />
-                      </td>
-                      <td className="border-r border-slate-100 px-1 py-1">
-                        <InlineField
-                          field="aksamEkmek"
-                          value={getDraftOrRow(row, "aksamEkmek")}
-                          numeric
-                          placeholder="0"
-                          orderHint={oh?.aksamEkmekOrderLine ?? null}
-                          suppressOrderHint={isCellDirty(row.id, "aksamEkmek")}
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "aksamEkmek")}
-                          onStartEdit={() => beginEditCell(row.id, "aksamEkmek", row.aksamEkmek)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "aksamEkmek", v)}
-                          onCancel={cancelEditCell}
-                        />
-                      </td>
-                      <td className="border-r border-slate-100 px-1 py-1">
-                        <InlineField
-                          field="kumanya"
-                          value={getDraftOrRow(row, "kumanya")}
-                          numeric
-                          placeholder="0"
-                          orderHint={oh?.kumanyaOrderLine ?? null}
-                          suppressOrderHint={isCellDirty(row.id, "kumanya")}
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "kumanya")}
-                          onStartEdit={() => beginEditCell(row.id, "kumanya", row.kumanya)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "kumanya", v)}
-                          onCancel={cancelEditCell}
-                        />
-                      </td>
-                      <td className="min-w-[120px] px-1 py-1">
-                        <InlineField
-                          field="aciklama"
-                          value={getDraftOrRow(row, "aciklama")}
-                          placeholder="Not"
-                          readOnly={gridReadOnly} editing={isEditing(row.id, "aciklama")}
-                          onStartEdit={() => beginEditCell(row.id, "aciklama", row.aciklama)}
-                          onDraftChange={setDraftValue}
-                          onCommit={(v) => commitCell(row.id, "aciklama", v)}
-                          onCancel={cancelEditCell}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {!companiesQuery.isLoading && visibleRows.length === 0 ? (
-              <p className="p-8 text-center text-sm text-slate-500">Aramaya uygun işletme yok.</p>
-            ) : null}
-          </div>
-        </div>
+        {!companiesQuery.isLoading ? (
+          <CompaniesDataGrid
+            rows={displayRows}
+            gridReadOnly={gridReadOnly}
+            orderHintsByCompany={orderHintsByCompany}
+            getDraftOrRow={(row, field) => getDraftOrRow(row as RowData, field)}
+            isCellDirty={isCellDirty}
+            isEditing={isEditing}
+            beginEditCell={beginEditCell}
+            commitCell={commitCell}
+            cancelEditCell={cancelEditCell}
+            setDraftValue={setDraftValue}
+            onOpenCompanyDialog={setEditingRowId}
+            onSaveRow={handleSaveRow}
+            savingRowId={savingRowId}
+          />
+        ) : (
+          <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Yükleniyor…</p>
+        )}
       </div>
 
       {/* Mobile: card stack */}
       <div className="flex flex-col gap-4 md:hidden">
-        {visibleRows.map((row) => {
+        {displayRows.map((row) => {
           const oh = orderHintsByCompany.get(row.id);
           return (
           <div
@@ -952,34 +872,69 @@ export default function AdminCompaniesPage() {
                   onCancel={cancelEditCell}
                 />
               </div>
+              <p className="col-span-2 mt-1 border-t border-slate-100 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Öğle servisi
+              </p>
               <div>
-                <p className="mb-1 text-xs font-medium text-slate-500">Öğle adet</p>
+                <p className="mb-1 text-xs font-medium text-slate-500">Adet</p>
                 <InlineField field="oglen" value={getDraftOrRow(row, "oglen")} numeric placeholder="0" orderHint={oh?.oglenOrderLine ?? null}
                           suppressOrderHint={isCellDirty(row.id, "oglen")} readOnly={gridReadOnly} editing={isEditing(row.id, "oglen")} onStartEdit={() => beginEditCell(row.id, "oglen", row.oglen)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglen", v)} onCancel={cancelEditCell} />
               </div>
               <div>
-                <p className="mb-1 text-xs font-medium text-slate-500">Öğle ekmek</p>
+                <p className="mb-1 text-xs font-medium text-slate-500">Ekmek</p>
                 <InlineField field="oglenEkmek" value={getDraftOrRow(row, "oglenEkmek")} numeric placeholder="0" orderHint={oh?.oglenEkmekOrderLine ?? null}
                           suppressOrderHint={isCellDirty(row.id, "oglenEkmek")} readOnly={gridReadOnly} editing={isEditing(row.id, "oglenEkmek")} onStartEdit={() => beginEditCell(row.id, "oglenEkmek", row.oglenEkmek)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglenEkmek", v)} onCancel={cancelEditCell} />
               </div>
-              <div className="col-span-2">
-                <p className="mb-1 text-xs font-medium text-slate-500">Öğle detay</p>
-                <InlineField field="oglenDetay" value={getDraftOrRow(row, "oglenDetay")} readOnly={gridReadOnly} editing={isEditing(row.id, "oglenDetay")} onStartEdit={() => beginEditCell(row.id, "oglenDetay", row.oglenDetay)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglenDetay", v)} onCancel={cancelEditCell} />
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-500">Ekmek arası</p>
+                <InlineField field="oglenEkmekArasi" value={getDraftOrRow(row, "oglenEkmekArasi")} numeric placeholder="0" orderHint={oh?.oglenEkmekArasiOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "oglenEkmekArasi")} readOnly={gridReadOnly} editing={isEditing(row.id, "oglenEkmekArasi")} onStartEdit={() => beginEditCell(row.id, "oglenEkmekArasi", row.oglenEkmekArasi)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglenEkmekArasi", v)} onCancel={cancelEditCell} />
               </div>
               <div>
-                <p className="mb-1 text-xs font-medium text-slate-500">Akşam adet</p>
+                <p className="mb-1 text-xs font-medium text-slate-500">Kumanya</p>
+                <InlineField field="oglenKumanya" value={getDraftOrRow(row, "oglenKumanya")} numeric placeholder="0" orderHint={oh?.oglenKumanyaOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "oglenKumanya")} readOnly={gridReadOnly} editing={isEditing(row.id, "oglenKumanya")} onStartEdit={() => beginEditCell(row.id, "oglenKumanya", row.oglenKumanya)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglenKumanya", v)} onCancel={cancelEditCell} />
+              </div>
+              <p className="col-span-2 mt-1 border-t border-slate-100 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Akşam servisi
+              </p>
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-500">Adet</p>
                 <InlineField field="aksam" value={getDraftOrRow(row, "aksam")} numeric placeholder="0" orderHint={oh?.aksamOrderLine ?? null}
                           suppressOrderHint={isCellDirty(row.id, "aksam")} readOnly={gridReadOnly} editing={isEditing(row.id, "aksam")} onStartEdit={() => beginEditCell(row.id, "aksam", row.aksam)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksam", v)} onCancel={cancelEditCell} />
               </div>
               <div>
-                <p className="mb-1 text-xs font-medium text-slate-500">Akşam ekmek</p>
+                <p className="mb-1 text-xs font-medium text-slate-500">Ekmek</p>
                 <InlineField field="aksamEkmek" value={getDraftOrRow(row, "aksamEkmek")} numeric placeholder="0" orderHint={oh?.aksamEkmekOrderLine ?? null}
                           suppressOrderHint={isCellDirty(row.id, "aksamEkmek")} readOnly={gridReadOnly} editing={isEditing(row.id, "aksamEkmek")} onStartEdit={() => beginEditCell(row.id, "aksamEkmek", row.aksamEkmek)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksamEkmek", v)} onCancel={cancelEditCell} />
               </div>
               <div>
+                <p className="mb-1 text-xs font-medium text-slate-500">Ekmek arası</p>
+                <InlineField field="aksamEkmekArasi" value={getDraftOrRow(row, "aksamEkmekArasi")} numeric placeholder="0" orderHint={oh?.aksamEkmekArasiOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "aksamEkmekArasi")} readOnly={gridReadOnly} editing={isEditing(row.id, "aksamEkmekArasi")} onStartEdit={() => beginEditCell(row.id, "aksamEkmekArasi", row.aksamEkmekArasi)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksamEkmekArasi", v)} onCancel={cancelEditCell} />
+              </div>
+              <div>
                 <p className="mb-1 text-xs font-medium text-slate-500">Kumanya</p>
-                <InlineField field="kumanya" value={getDraftOrRow(row, "kumanya")} numeric placeholder="0" orderHint={oh?.kumanyaOrderLine ?? null}
-                          suppressOrderHint={isCellDirty(row.id, "kumanya")} readOnly={gridReadOnly} editing={isEditing(row.id, "kumanya")} onStartEdit={() => beginEditCell(row.id, "kumanya", row.kumanya)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "kumanya", v)} onCancel={cancelEditCell} />
+                <InlineField field="aksamKumanya" value={getDraftOrRow(row, "aksamKumanya")} numeric placeholder="0" orderHint={oh?.aksamKumanyaOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "aksamKumanya")} readOnly={gridReadOnly} editing={isEditing(row.id, "aksamKumanya")} onStartEdit={() => beginEditCell(row.id, "aksamKumanya", row.aksamKumanya)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksamKumanya", v)} onCancel={cancelEditCell} />
+              </div>
+              <p className="col-span-2 mt-1 border-t border-slate-100 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Gece servisi
+              </p>
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-500">Adet</p>
+                <InlineField field="gece" value={getDraftOrRow(row, "gece")} numeric placeholder="0" orderHint={oh?.geceOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "gece")} readOnly={gridReadOnly} editing={isEditing(row.id, "gece")} onStartEdit={() => beginEditCell(row.id, "gece", row.gece)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "gece", v)} onCancel={cancelEditCell} />
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-500">Ekmek</p>
+                <InlineField field="geceEkmek" value={getDraftOrRow(row, "geceEkmek")} numeric placeholder="0" orderHint={oh?.geceEkmekOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "geceEkmek")} readOnly={gridReadOnly} editing={isEditing(row.id, "geceEkmek")} onStartEdit={() => beginEditCell(row.id, "geceEkmek", row.geceEkmek)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "geceEkmek", v)} onCancel={cancelEditCell} />
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-500">Kumanya</p>
+                <InlineField field="geceKumanya" value={getDraftOrRow(row, "geceKumanya")} numeric placeholder="0" orderHint={oh?.geceKumanyaOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "geceKumanya")} readOnly={gridReadOnly} editing={isEditing(row.id, "geceKumanya")} onStartEdit={() => beginEditCell(row.id, "geceKumanya", row.geceKumanya)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "geceKumanya", v)} onCancel={cancelEditCell} />
               </div>
               <div className="col-span-2">
                 <p className="mb-1 text-xs font-medium text-slate-500">Açıklama</p>

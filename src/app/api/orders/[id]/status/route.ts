@@ -1,7 +1,11 @@
 import { ItemStatus, OrderStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { ensureAdmin } from "@/lib/api-auth";
-import { computeGridDeltasFromOrderItems, mergeCompanyAdminNoteWithDeltas } from "@/lib/company-admin-grid";
+import {
+  computeGridDeltasFromOrderItems,
+  hasGridDeltas,
+  mergeCompanyAdminNoteWithDeltas,
+} from "@/lib/company-admin-grid";
 import { db } from "@/lib/db";
 import { createOrderActivity, ORDER_ACTIVITY_TYPES } from "@/lib/order-activity";
 import { publishSse } from "@/lib/sse";
@@ -42,13 +46,13 @@ export async function PATCH(request: Request, context: Context) {
       nextOrderStatus === OrderStatus.CONFIRMED &&
       prevStatus === OrderStatus.PENDING &&
       current.gridAppliedAt === null &&
-      (deltas.kumanya > 0 || deltas.oglen > 0 || deltas.aksam > 0 || deltas.oglenEkmek > 0 || deltas.aksamEkmek > 0);
+      hasGridDeltas(deltas);
 
     const shouldRevertGrid =
       prevStatus === OrderStatus.CONFIRMED &&
       nextOrderStatus === OrderStatus.PENDING &&
       current.gridAppliedAt !== null &&
-      (deltas.kumanya > 0 || deltas.oglen > 0 || deltas.aksam > 0 || deltas.oglenEkmek > 0 || deltas.aksamEkmek > 0);
+      hasGridDeltas(deltas);
 
     if (shouldApplyGrid) {
       const nextAdminNote = mergeCompanyAdminNoteWithDeltas(current.company.adminNote, deltas, 1);

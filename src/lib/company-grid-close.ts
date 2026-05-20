@@ -61,25 +61,5 @@ export async function runCompanyGridDayClose(now = new Date()): Promise<{ archiv
 }
 
 function extractGridPayloadJson(adminNote: string | null): object {
-  const empty = emptyGridPayload();
-  if (!adminNote) return empty;
-  const prefix = "__GRID__:";
-  if (!adminNote.startsWith(prefix)) {
-    return { ...empty, aciklama: adminNote };
-  }
-  try {
-    const parsed = JSON.parse(adminNote.slice(prefix.length)) as Record<string, unknown>;
-    return {
-      cesit: String(parsed.cesit ?? ""),
-      oglen: String(parsed.oglen ?? ""),
-      oglenDetay: String(parsed.oglenDetay ?? ""),
-      oglenEkmek: String(parsed.oglenEkmek ?? ""),
-      aksam: String(parsed.aksam ?? ""),
-      aksamEkmek: String(parsed.aksamEkmek ?? ""),
-      kumanya: String(parsed.kumanya ?? ""),
-      aciklama: String(parsed.aciklama ?? ""),
-    };
-  } catch {
-    return { ...empty, aciklama: adminNote };
-  }
+  return parseAdminNoteToGrid(adminNote);
 }

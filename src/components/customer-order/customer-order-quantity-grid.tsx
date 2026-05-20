@@ -2,8 +2,7 @@
 
 import type { ItemCategory } from "@prisma/client";
 import { Moon, Sun, Sunset } from "lucide-react";
-import type { UseFormReturn } from "react-hook-form";
-import { useEffect, useRef, useState } from "react";
+import { Controller, type UseFormReturn } from "react-hook-form";
 import { ALL_CATEGORIES, CATEGORY_LABELS } from "@/lib/categories";
 import { cn } from "@/lib/utils";
 
@@ -46,57 +45,40 @@ const CATEGORY_HINTS: Record<ItemCategory, string> = {
   DUZ_EKMEK: "Ekmek adedi",
 };
 
-function QuickQtyPopover({
+const qtyStepBtn =
+  "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200/80 bg-white text-sm font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 disabled:opacity-40";
+
+/** Tarayıcı varsayılan number oklarını gizle; − / + stepper kullanılıyor */
+const qtyInputClass =
+  "min-w-0 flex-1 rounded-lg border border-slate-200 bg-white py-2.5 text-center text-lg font-semibold tabular-nums text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+
+function QuickQtyStepper({
   disabled,
-  onAdd,
+  onDelta,
 }: {
   disabled: boolean;
-  onAdd: (n: number) => void;
+  onDelta: (delta: number) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocDown(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDocDown);
-    return () => document.removeEventListener("mousedown", onDocDown);
-  }, [open]);
-
   return (
-    <div className="relative shrink-0" ref={rootRef}>
+    <div className="flex shrink-0 gap-1">
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200/80 bg-white text-sm font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50 disabled:opacity-40"
-        aria-expanded={open}
-        aria-label="Hızlı adet ekle"
+        onClick={() => onDelta(-1)}
+        className={qtyStepBtn}
+        aria-label="1 adet azalt"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onDelta(1)}
+        className={qtyStepBtn}
+        aria-label="1 adet artır"
       >
         +
       </button>
-      {open ? (
-        <div className="absolute right-0 z-30 mt-1 flex gap-1 rounded-lg border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur-sm">
-          {([10, 50] as const).map((n) => (
-            <button
-              key={n}
-              type="button"
-              disabled={disabled}
-              onClick={() => {
-                onAdd(n);
-                setOpen(false);
-              }}
-              className="rounded-md border border-emerald-200/90 bg-emerald-50/90 px-2 py-1 text-[11px] font-bold tabular-nums text-emerald-900 hover:bg-emerald-100 disabled:opacity-40"
-            >
-              +{n}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -108,8 +90,20 @@ type Props = {
   onAddToCell: (shift: ShiftKey, category: ItemCategory, delta: number) => void;
 };
 
+function qtyInputDisplay(value: unknown): string {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n === 0) return "";
+  return String(n);
+}
+
+function parseQtyInput(raw: string): number {
+  if (raw === "") return 0;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
 export function CustomerOrderQuantityGrid({ form, disabled, qtyHighlight, onAddToCell }: Props) {
-  const { register } = form;
+  const { control } = form;
 
   return (
     <div
@@ -150,17 +144,28 @@ export function CustomerOrderQuantityGrid({ form, disabled, qtyHighlight, onAddT
                   </span>
                   <p className="mb-1.5 text-[10px] text-slate-500">{CATEGORY_HINTS[category]}</p>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="0"
-                      disabled={disabled}
-                      className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white py-2.5 text-center text-lg font-semibold tabular-nums text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                      {...register(`quantities.${shift}.${category}`, { valueAsNumber: true })}
+                    <Controller
+                      name={`quantities.${shift}.${category}`}
+                      control={control}
+                      render={({ field }) => (
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="numeric"
+                          placeholder="0"
+                          disabled={disabled}
+                          className={qtyInputClass}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={qtyInputDisplay(field.value)}
+                          onChange={(e) => field.onChange(parseQtyInput(e.target.value))}
+                        />
+                      )}
                     />
-                    <QuickQtyPopover
+                    <QuickQtyStepper
                       disabled={disabled}
-                      onAdd={(n) => onAddToCell(shift, category, n)}
+                      onDelta={(delta) => onAddToCell(shift, category, delta)}
                     />
                   </div>
                 </div>
