@@ -19,7 +19,7 @@ export function CustomerOrderFooter({ register, errors, submitError, submitting,
           className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
           rows={3}
           maxLength={2000}
-          placeholder="Mutfak için notunuz"
+          placeholder="Sipariş notunuz"
           {...register("notes")}
         />
         {errors.notes ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AdminCreateOrder } from "@/components/admin-create-order";
 
@@ -10,6 +10,7 @@ type Company = {
 };
 
 export default function AdminManualYemekPage() {
+  const queryClient = useQueryClient();
   const companiesQuery = useQuery({
     queryKey: ["manual-yemek-companies"],
     queryFn: async () => {
@@ -33,7 +34,9 @@ export default function AdminManualYemekPage() {
       <AdminCreateOrder
         companies={companiesQuery.data ?? []}
         onCreated={() => {
-          toast.success("Manuel sipariş kaydedildi.");
+          toast.success("Manuel sipariş kaydedildi; sipariş geçmişinde görünür.");
+          void queryClient.invalidateQueries({ queryKey: ["history-orders"] });
+          void queryClient.invalidateQueries({ queryKey: ["catering-orders"] });
         }}
       />
 

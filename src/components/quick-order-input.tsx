@@ -17,8 +17,8 @@ type Props = {
   onApplied?: () => void;
 };
 
-const PLACEHOLDER = `Örnek: sabah 40 yemek, akşam 25 kumanya, gece 12 ekmek
-Yazmayı bıraktığınızda adetler otomatik güncellenir.`;
+const PLACEHOLDER = `Örnek: sabah 40 yemek akşam 25 kumanya gece 12 ekmek
+Virgül koymak zorunda değilsiniz; yazmayı bıraktığınızda adetler otomatik güncellenir.`;
 
 const DEBOUNCE_MS = 480;
 

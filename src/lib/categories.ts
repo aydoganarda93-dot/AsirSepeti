@@ -11,7 +11,7 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
   KUMANYA: "Kumanya",
   OGLEN_YEMEGI: "Yemek",
   EKMEK_ARASI: "Ekmek Arası",
-  DUZ_EKMEK: "Düz Ekmek",
+  DUZ_EKMEK: "Ekmek",
 };
 
 export const SHIFT_LABELS = {

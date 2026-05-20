@@ -2,8 +2,10 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { format, parseISO } from "date-fns";
+import { tr } from "date-fns/locale";
 import { useRouter } from "next/navigation";
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import type { FieldErrors, UseFormRegister, UseFormReturn } from "react-hook-form";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -21,7 +23,7 @@ import { CustomerOrderSuccessSplash } from "@/components/customer-order-success-
 import type { MyOrderRow } from "@/components/customer-orders-panel";
 import { QuickOrderInput } from "@/components/quick-order-input";
 import { ItemCategory } from "@prisma/client";
-import { ALL_CATEGORIES } from "@/lib/categories";
+import { ALL_CATEGORIES, CATEGORY_LABELS } from "@/lib/categories";
 import { formatUtcYmdFromOffset } from "@/lib/date";
 import { emptyFormQuantities, type FormQuantities, orderItemsToFormQuantities } from "@/lib/order-form";
 import { useSession } from "next-auth/react";
@@ -72,6 +74,26 @@ function toYmd(iso: string) {
   return iso;
 }
 
+function formatShortDate(iso: string): string {
+  try {
+    const date = parseISO(iso.includes("T") ? iso : `${iso}T12:00:00.000Z`);
+    return format(date, "d MMM", { locale: tr });
+  } catch {
+    return iso;
+  }
+}
+
+function summarizeOrderItems(items: ReadonlyArray<{ category: ItemCategory; quantity: number }>): string {
+  const totals = new Map<ItemCategory, number>();
+  for (const item of items) {
+    if (item.quantity <= 0) continue;
+    totals.set(item.category, (totals.get(item.category) ?? 0) + item.quantity);
+  }
+  return ALL_CATEGORIES.filter((c) => (totals.get(c) ?? 0) > 0)
+    .map((c) => `${totals.get(c)} ${CATEGORY_LABELS[c]}`)
+    .join(" · ");
+}
+
 const emptyShift = () =>
   ({
     KUMANYA: 0,
@@ -104,7 +126,7 @@ export default function Home() {
   const [extraOrderMode, setExtraOrderMode] = useState(false);
   const [qtyHighlight, setQtyHighlight] = useState(false);
   const [showSuccessSplash, setShowSuccessSplash] = useState(false);
-  const [orderTab, setOrderTab] = useState<CustomerOrderTab>("quick");
+  const [orderTab, setOrderTab] = useState<CustomerOrderTab>("detailed");
   const [quickPreviewText, setQuickPreviewText] = useState("");
   const [splashOrder, setSplashOrder] = useState<{ id: string; cancelToken: string } | null>(null);
 
@@ -125,6 +147,18 @@ export default function Home() {
     },
     enabled: showCustomerPanel && isClient,
   });
+
+  const lastOrderSummary = useMemo(() => {
+    const orders = myOrdersQuery.data ?? [];
+    if (orders.length === 0) return null;
+    const sorted = [...orders].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    const reference = sorted.find((o) => o.kind === "STANDARD") ?? sorted[0];
+    const itemsLine = summarizeOrderItems(reference.items);
+    if (!itemsLine) return null;
+    return { dateLabel: formatShortDate(reference.orderDate), itemsLine };
+  }, [myOrdersQuery.data]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -222,12 +256,17 @@ export default function Home() {
       setEditingOrderId(null);
       setExtraOrderMode(false);
       form.reset({
-        orderDate: toYmd(order.orderDate),
+        orderDate: minDate,
         notes: order.notes ?? "",
         quantities: orderItemsToFormQuantities(order.items),
       });
       bumpQuantityHighlight();
-      toast.success("Son sipariş forma yazıldı; tarihi değiştirebilirsiniz.");
+      const itemsLine = summarizeOrderItems(order.items);
+      toast.success(
+        itemsLine
+          ? `${formatShortDate(order.orderDate)} siparişiniz forma yazıldı: ${itemsLine}. Tarih bugüne ayarlandı.`
+          : `${formatShortDate(order.orderDate)} siparişiniz forma yazıldı; tarih bugüne ayarlandı.`,
+      );
     } catch {
       toast.error("Bağlantı hatası.");
     }
@@ -309,7 +348,8 @@ export default function Home() {
       <div className="mx-auto max-w-6xl px-3 md:px-6">
         <CustomerOrderHeader
           showMenu={showMenuCard}
-          showRepeat={showCustomerPanel}
+          showRepeat={showCustomerPanel && lastOrderSummary !== null}
+          lastOrderSummary={lastOrderSummary}
           showUser={Boolean(session?.user)}
           userName={session?.user?.name ?? undefined}
           onRepeatLast={repeatLastOrder}

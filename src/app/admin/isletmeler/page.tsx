@@ -2,6 +2,7 @@
 
 import { Download, Edit2, FileSpreadsheet, Plus, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -71,11 +72,6 @@ function displayNumeric(value: string): string {
   return t === "" ? "0" : t;
 }
 
-function numericDraftFromHint(orderHint: string | null | undefined): string {
-  const match = orderHint?.match(/\d+/);
-  return match?.[0] ?? "";
-}
-
 function buildRows(companies: Company[]): RowData[] {
   return companies.map((company, index) => {
     const parsed = parseAdminNoteToGrid(company.adminNote);
@@ -132,6 +128,7 @@ function InlineField({
   editing,
   readOnly,
   orderHint,
+  suppressOrderHint,
   onStartEdit,
   onCommit,
   onDraftChange,
@@ -148,6 +145,7 @@ function InlineField({
   readOnly?: boolean;
   /** Sipariş satırlarından türetilen bilgi (salt okunur alt yazı) */
   orderHint?: string | null;
+  suppressOrderHint?: boolean;
   onStartEdit: () => void;
   onCommit: (next: string) => void;
   onDraftChange: (next: string) => void;
@@ -200,7 +198,7 @@ function InlineField({
   }
 
   const show = numeric ? displayNumeric(value) : value.trim();
-  const shouldPromoteOrderHint = numeric && show === "0" && hasOrderHint;
+  const shouldPromoteOrderHint = !suppressOrderHint && numeric && show === "0" && hasOrderHint;
 
   const mainBlock =
     displayMode === "cesit" ? (
@@ -366,6 +364,11 @@ export default function AdminCompaniesPage() {
     [baseRows, patchById],
   );
 
+  const rowsRef = useRef(rows);
+  const dirtyIdsRef = useRef(dirtyIds);
+  rowsRef.current = rows;
+  dirtyIdsRef.current = dirtyIds;
+
   const visibleRows = useMemo(
     () => rows.filter((row) => row.companyName.toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr"))),
     [rows, search],
@@ -383,6 +386,12 @@ export default function AdminCompaniesPage() {
     setDirtyIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }, []);
 
+  const isCellDirty = useCallback(
+    (rowId: string, field: keyof RowData) =>
+      patchById[rowId] !== undefined && patchById[rowId]?.[field] !== undefined,
+    [patchById],
+  );
+
   const updateCell = useCallback(
     (id: string, key: keyof RowData, value: string) => {
       setPatchById((prev) => ({
@@ -395,12 +404,12 @@ export default function AdminCompaniesPage() {
   );
 
   const beginEditCell = useCallback(
-    (rowId: string, field: keyof RowData, current: string, orderHint?: string | null) => {
+    (rowId: string, field: keyof RowData, current: string) => {
       if (gridReadOnly) return;
       setCellFocus({ rowId, field });
       if (NUMERIC_FIELDS.has(field)) {
         const numericCurrent = current.replace(/\D/g, "");
-        setDraftValue(numericCurrent === "0" ? numericDraftFromHint(orderHint) || numericCurrent : numericCurrent);
+        setDraftValue(numericCurrent === "0" ? "" : numericCurrent);
         return;
       }
       setDraftValue(current);
@@ -428,14 +437,34 @@ export default function AdminCompaniesPage() {
       toast.info("Geçmiş gün salt okunur; kayıt yapılamaz.");
       return;
     }
-    if (dirtyIds.length === 0) {
+
+    if (cellFocus) {
+      const pending = cellFocus;
+      const next = NUMERIC_FIELDS.has(pending.field)
+        ? normalizeNumericCell(draftValue)
+        : draftValue;
+      flushSync(() => {
+        setPatchById((prev) => ({
+          ...prev,
+          [pending.rowId]: { ...prev[pending.rowId], [pending.field]: next },
+        }));
+        setDirtyIds((prev) => (prev.includes(pending.rowId) ? prev : [...prev, pending.rowId]));
+        setCellFocus(null);
+        setDraftValue("");
+      });
+    }
+
+    const currentDirtyIds = dirtyIdsRef.current;
+    const currentRows = rowsRef.current;
+
+    if (currentDirtyIds.length === 0) {
       toast.info("Kaydedilecek değişiklik bulunmuyor.");
       return;
     }
 
     setSavingAll(true);
     try {
-      const dirtyRows = rows.filter((row) => dirtyIds.includes(row.id));
+      const dirtyRows = currentRows.filter((row) => currentDirtyIds.includes(row.id));
       for (const row of dirtyRows) {
         if (!row.companyName.trim()) {
           throw new Error("Firma adı boş bırakılamaz.");
@@ -773,8 +802,9 @@ export default function AdminCompaniesPage() {
                           numeric
                           placeholder="0"
                           orderHint={oh?.oglenOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "oglen")}
                           readOnly={gridReadOnly} editing={isEditing(row.id, "oglen")}
-                          onStartEdit={() => beginEditCell(row.id, "oglen", row.oglen, oh?.oglenOrderLine)}
+                          onStartEdit={() => beginEditCell(row.id, "oglen", row.oglen)}
                           onDraftChange={setDraftValue}
                           onCommit={(v) => commitCell(row.id, "oglen", v)}
                           onCancel={cancelEditCell}
@@ -799,8 +829,9 @@ export default function AdminCompaniesPage() {
                           numeric
                           placeholder="0"
                           orderHint={oh?.oglenEkmekOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "oglenEkmek")}
                           readOnly={gridReadOnly} editing={isEditing(row.id, "oglenEkmek")}
-                          onStartEdit={() => beginEditCell(row.id, "oglenEkmek", row.oglenEkmek, oh?.oglenEkmekOrderLine)}
+                          onStartEdit={() => beginEditCell(row.id, "oglenEkmek", row.oglenEkmek)}
                           onDraftChange={setDraftValue}
                           onCommit={(v) => commitCell(row.id, "oglenEkmek", v)}
                           onCancel={cancelEditCell}
@@ -813,8 +844,9 @@ export default function AdminCompaniesPage() {
                           numeric
                           placeholder="0"
                           orderHint={oh?.aksamOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "aksam")}
                           readOnly={gridReadOnly} editing={isEditing(row.id, "aksam")}
-                          onStartEdit={() => beginEditCell(row.id, "aksam", row.aksam, oh?.aksamOrderLine)}
+                          onStartEdit={() => beginEditCell(row.id, "aksam", row.aksam)}
                           onDraftChange={setDraftValue}
                           onCommit={(v) => commitCell(row.id, "aksam", v)}
                           onCancel={cancelEditCell}
@@ -827,8 +859,9 @@ export default function AdminCompaniesPage() {
                           numeric
                           placeholder="0"
                           orderHint={oh?.aksamEkmekOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "aksamEkmek")}
                           readOnly={gridReadOnly} editing={isEditing(row.id, "aksamEkmek")}
-                          onStartEdit={() => beginEditCell(row.id, "aksamEkmek", row.aksamEkmek, oh?.aksamEkmekOrderLine)}
+                          onStartEdit={() => beginEditCell(row.id, "aksamEkmek", row.aksamEkmek)}
                           onDraftChange={setDraftValue}
                           onCommit={(v) => commitCell(row.id, "aksamEkmek", v)}
                           onCancel={cancelEditCell}
@@ -841,8 +874,9 @@ export default function AdminCompaniesPage() {
                           numeric
                           placeholder="0"
                           orderHint={oh?.kumanyaOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "kumanya")}
                           readOnly={gridReadOnly} editing={isEditing(row.id, "kumanya")}
-                          onStartEdit={() => beginEditCell(row.id, "kumanya", row.kumanya, oh?.kumanyaOrderLine)}
+                          onStartEdit={() => beginEditCell(row.id, "kumanya", row.kumanya)}
                           onDraftChange={setDraftValue}
                           onCommit={(v) => commitCell(row.id, "kumanya", v)}
                           onCancel={cancelEditCell}
@@ -920,11 +954,13 @@ export default function AdminCompaniesPage() {
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-slate-500">Öğle adet</p>
-                <InlineField field="oglen" value={getDraftOrRow(row, "oglen")} numeric placeholder="0" orderHint={oh?.oglenOrderLine ?? null} readOnly={gridReadOnly} editing={isEditing(row.id, "oglen")} onStartEdit={() => beginEditCell(row.id, "oglen", row.oglen, oh?.oglenOrderLine)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglen", v)} onCancel={cancelEditCell} />
+                <InlineField field="oglen" value={getDraftOrRow(row, "oglen")} numeric placeholder="0" orderHint={oh?.oglenOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "oglen")} readOnly={gridReadOnly} editing={isEditing(row.id, "oglen")} onStartEdit={() => beginEditCell(row.id, "oglen", row.oglen)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglen", v)} onCancel={cancelEditCell} />
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-slate-500">Öğle ekmek</p>
-                <InlineField field="oglenEkmek" value={getDraftOrRow(row, "oglenEkmek")} numeric placeholder="0" orderHint={oh?.oglenEkmekOrderLine ?? null} readOnly={gridReadOnly} editing={isEditing(row.id, "oglenEkmek")} onStartEdit={() => beginEditCell(row.id, "oglenEkmek", row.oglenEkmek, oh?.oglenEkmekOrderLine)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglenEkmek", v)} onCancel={cancelEditCell} />
+                <InlineField field="oglenEkmek" value={getDraftOrRow(row, "oglenEkmek")} numeric placeholder="0" orderHint={oh?.oglenEkmekOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "oglenEkmek")} readOnly={gridReadOnly} editing={isEditing(row.id, "oglenEkmek")} onStartEdit={() => beginEditCell(row.id, "oglenEkmek", row.oglenEkmek)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "oglenEkmek", v)} onCancel={cancelEditCell} />
               </div>
               <div className="col-span-2">
                 <p className="mb-1 text-xs font-medium text-slate-500">Öğle detay</p>
@@ -932,15 +968,18 @@ export default function AdminCompaniesPage() {
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-slate-500">Akşam adet</p>
-                <InlineField field="aksam" value={getDraftOrRow(row, "aksam")} numeric placeholder="0" orderHint={oh?.aksamOrderLine ?? null} readOnly={gridReadOnly} editing={isEditing(row.id, "aksam")} onStartEdit={() => beginEditCell(row.id, "aksam", row.aksam, oh?.aksamOrderLine)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksam", v)} onCancel={cancelEditCell} />
+                <InlineField field="aksam" value={getDraftOrRow(row, "aksam")} numeric placeholder="0" orderHint={oh?.aksamOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "aksam")} readOnly={gridReadOnly} editing={isEditing(row.id, "aksam")} onStartEdit={() => beginEditCell(row.id, "aksam", row.aksam)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksam", v)} onCancel={cancelEditCell} />
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-slate-500">Akşam ekmek</p>
-                <InlineField field="aksamEkmek" value={getDraftOrRow(row, "aksamEkmek")} numeric placeholder="0" orderHint={oh?.aksamEkmekOrderLine ?? null} readOnly={gridReadOnly} editing={isEditing(row.id, "aksamEkmek")} onStartEdit={() => beginEditCell(row.id, "aksamEkmek", row.aksamEkmek, oh?.aksamEkmekOrderLine)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksamEkmek", v)} onCancel={cancelEditCell} />
+                <InlineField field="aksamEkmek" value={getDraftOrRow(row, "aksamEkmek")} numeric placeholder="0" orderHint={oh?.aksamEkmekOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "aksamEkmek")} readOnly={gridReadOnly} editing={isEditing(row.id, "aksamEkmek")} onStartEdit={() => beginEditCell(row.id, "aksamEkmek", row.aksamEkmek)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "aksamEkmek", v)} onCancel={cancelEditCell} />
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-slate-500">Kumanya</p>
-                <InlineField field="kumanya" value={getDraftOrRow(row, "kumanya")} numeric placeholder="0" orderHint={oh?.kumanyaOrderLine ?? null} readOnly={gridReadOnly} editing={isEditing(row.id, "kumanya")} onStartEdit={() => beginEditCell(row.id, "kumanya", row.kumanya, oh?.kumanyaOrderLine)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "kumanya", v)} onCancel={cancelEditCell} />
+                <InlineField field="kumanya" value={getDraftOrRow(row, "kumanya")} numeric placeholder="0" orderHint={oh?.kumanyaOrderLine ?? null}
+                          suppressOrderHint={isCellDirty(row.id, "kumanya")} readOnly={gridReadOnly} editing={isEditing(row.id, "kumanya")} onStartEdit={() => beginEditCell(row.id, "kumanya", row.kumanya)} onDraftChange={setDraftValue} onCommit={(v) => commitCell(row.id, "kumanya", v)} onCancel={cancelEditCell} />
               </div>
               <div className="col-span-2">
                 <p className="mb-1 text-xs font-medium text-slate-500">Açıklama</p>

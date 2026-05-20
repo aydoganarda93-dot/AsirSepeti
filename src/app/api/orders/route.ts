@@ -1,11 +1,12 @@
-import { ItemCategory, OrderKind, Prisma, Shift } from "@prisma/client";
+import { ItemCategory, OrderKind, OrderStatus, Prisma, Shift } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { ensureAdmin } from "@/lib/api-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/categories";
-import { ORDER_ACTIVITY_TYPES } from "@/lib/order-activity";
+import { computeGridDeltasFromOrderItems, mergeCompanyAdminNoteWithDeltas } from "@/lib/company-admin-grid";
+import { createOrderActivity, ORDER_ACTIVITY_TYPES } from "@/lib/order-activity";
 import { parseDateOnlyUtc } from "@/lib/date";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { publishSse } from "@/lib/sse";
@@ -19,8 +20,18 @@ type ShiftPayload = {
 
 const CREATE_ORDER_RATE_LIMIT = {
   windowMs: 60 * 60 * 1000, // 1 saat
-  max: 5,
+  max: 20,
 };
+
+function hasGridDeltas(deltas: ReturnType<typeof computeGridDeltasFromOrderItems>): boolean {
+  return (
+    deltas.kumanya > 0 ||
+    deltas.oglen > 0 ||
+    deltas.aksam > 0 ||
+    deltas.oglenEkmek > 0 ||
+    deltas.aksamEkmek > 0
+  );
+}
 
 function toItems(quantities: ShiftPayload) {
   const shifts: Array<{ key: keyof ShiftPayload; shift: Shift }> = [
@@ -158,73 +169,127 @@ export async function POST(request: Request) {
 
     let order;
     let adminManualUpsert = false;
+    let autoSupplement = false;
 
     if (isAdmin) {
-      const existing = await db.order.findFirst({
-        where: {
-          companyId: company.id,
-          orderDate: validDate,
-          kind: OrderKind.STANDARD,
-        },
-      });
-      if (existing) {
-        adminManualUpsert = true;
-        order = await db.order.update({
-          where: { id: existing.id },
-          data: {
-            contactName,
-            notes: input.notes,
-            items: {
-              deleteMany: {},
-              create: toItems(input.quantities),
-            },
+      const itemRows = toItems(input.quantities);
+      const manualResult = await db.$transaction(async (tx) => {
+        let upsert = false;
+        const existing = await tx.order.findFirst({
+          where: {
+            companyId: company.id,
+            orderDate: validDate,
+            kind: OrderKind.STANDARD,
           },
-          include: { company: true, items: true },
+          include: { items: true, company: true },
         });
-      } else {
-        try {
-          order = await db.order.create({
+
+        if (existing) {
+          upsert = true;
+          const prevDeltas = computeGridDeltasFromOrderItems(existing.items);
+          if (existing.gridAppliedAt && hasGridDeltas(prevDeltas)) {
+            const revertedNote = mergeCompanyAdminNoteWithDeltas(existing.company.adminNote, prevDeltas, -1);
+            await tx.company.update({
+              where: { id: company.id },
+              data: { adminNote: revertedNote },
+            });
+          }
+
+          await tx.order.update({
+            where: { id: existing.id },
             data: {
-              companyId: company.id,
               contactName,
-              orderDate: validDate,
               notes: input.notes,
-              kind: OrderKind.STANDARD,
-              items: {
-                create: toItems(input.quantities),
-              },
+              status: OrderStatus.CONFIRMED,
+              items: { deleteMany: {}, create: itemRows },
             },
-            include: { company: true, items: true },
           });
-        } catch (err) {
-          // Admin manuel create ile eşzamanlı müşteri create yarışı → upsert davranışına düş.
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-            const raced = await db.order.findFirst({
-              where: {
-                companyId: company.id,
-                orderDate: validDate,
-                kind: OrderKind.STANDARD,
-              },
-            });
-            if (!raced) throw err;
-            adminManualUpsert = true;
-            order = await db.order.update({
-              where: { id: raced.id },
+        } else {
+          try {
+            await tx.order.create({
               data: {
+                companyId: company.id,
                 contactName,
+                orderDate: validDate,
                 notes: input.notes,
-                items: {
-                  deleteMany: {},
-                  create: toItems(input.quantities),
-                },
+                kind: OrderKind.STANDARD,
+                status: OrderStatus.CONFIRMED,
+                items: { create: itemRows },
               },
-              include: { company: true, items: true },
             });
-          } else {
-            throw err;
+          } catch (err) {
+            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+              const raced = await tx.order.findFirst({
+                where: {
+                  companyId: company.id,
+                  orderDate: validDate,
+                  kind: OrderKind.STANDARD,
+                },
+                include: { items: true, company: true },
+              });
+              if (!raced) throw err;
+              upsert = true;
+              const prevDeltas = computeGridDeltasFromOrderItems(raced.items);
+              if (raced.gridAppliedAt && hasGridDeltas(prevDeltas)) {
+                const revertedNote = mergeCompanyAdminNoteWithDeltas(raced.company.adminNote, prevDeltas, -1);
+                await tx.company.update({
+                  where: { id: company.id },
+                  data: { adminNote: revertedNote },
+                });
+              }
+              await tx.order.update({
+                where: { id: raced.id },
+                data: {
+                  contactName,
+                  notes: input.notes,
+                  status: OrderStatus.CONFIRMED,
+                  items: { deleteMany: {}, create: itemRows },
+                },
+              });
+            } else {
+              throw err;
+            }
           }
         }
-      }
+
+        const saved = await tx.order.findFirst({
+          where: {
+            companyId: company.id,
+            orderDate: validDate,
+            kind: OrderKind.STANDARD,
+          },
+          include: { items: true, company: true },
+        });
+        if (!saved) {
+          throw new Error("Manuel sipariş kaydedilemedi.");
+        }
+
+        const newDeltas = computeGridDeltasFromOrderItems(saved.items);
+        if (hasGridDeltas(newDeltas)) {
+          const nextNote = mergeCompanyAdminNoteWithDeltas(saved.company.adminNote, newDeltas, 1);
+          await tx.company.update({
+            where: { id: company.id },
+            data: { adminNote: nextNote },
+          });
+          await tx.order.update({
+            where: { id: saved.id },
+            data: { gridAppliedAt: new Date() },
+          });
+        }
+
+        const final = await tx.order.findUnique({
+          where: { id: saved.id },
+          include: { company: true, items: true },
+        });
+        if (!final) {
+          throw new Error("Manuel sipariş kaydedilemedi.");
+        }
+
+        return { order: final, upsert };
+      });
+
+      order = manualResult.order;
+      adminManualUpsert = manualResult.upsert;
     } else if (asSupplement) {
       order = await db.order.create({
         data: {
@@ -249,73 +314,55 @@ export async function POST(request: Request) {
       });
 
       if (existingStandard) {
-        if (existingStandard.status === "PENDING") {
-          return NextResponse.json(
-            {
-              error:
-                "Bu güne zaten sipariş göndermişsiniz; önce «Siparişlerim»den düzeltin veya «Üzerine ekle» kullanın.",
-              code: "PENDING_STANDARD_EXISTS",
-              existingOrderId: existingStandard.id,
-            },
-            { status: 409 },
-          );
-        }
-        return NextResponse.json(
-          {
-            error:
-              "Bu güne ait siparişiniz işleme alındı. Ek adet için «Üzerine ekle»ye basın.",
-            code: "STANDARD_LOCKED",
-          },
-          { status: 409 },
-        );
-      }
-
-      try {
+        autoSupplement = true;
         order = await db.order.create({
           data: {
             companyId: company.id,
             contactName,
             orderDate: validDate,
             notes: input.notes,
-            kind: OrderKind.STANDARD,
+            kind: OrderKind.SUPPLEMENT,
             items: {
               create: toItems(input.quantities),
             },
           },
           include: { company: true, items: true },
         });
-      } catch (err) {
-        // Race: arada başka istek aynı (companyId, orderDate, STANDARD) için kayıt açtı.
-        // Order_companyId_orderDate_standard_key partial unique index P2002 fırlatır.
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-          const racedExisting = await db.order.findFirst({
-            where: {
+      } else {
+        try {
+          order = await db.order.create({
+            data: {
               companyId: company.id,
+              contactName,
               orderDate: validDate,
+              notes: input.notes,
               kind: OrderKind.STANDARD,
-            },
-          });
-          if (racedExisting?.status === "PENDING") {
-            return NextResponse.json(
-              {
-                error:
-                  "Bu güne zaten sipariş göndermişsiniz; önce «Siparişlerim»den düzeltin veya «Üzerine ekle» kullanın.",
-                code: "PENDING_STANDARD_EXISTS",
-                existingOrderId: racedExisting.id,
+              items: {
+                create: toItems(input.quantities),
               },
-              { status: 409 },
-            );
-          }
-          return NextResponse.json(
-            {
-              error:
-                "Bu güne ait siparişiniz işleme alındı. Ek adet için «Üzerine ekle»ye basın.",
-              code: "STANDARD_LOCKED",
             },
-            { status: 409 },
-          );
+            include: { company: true, items: true },
+          });
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+            autoSupplement = true;
+            order = await db.order.create({
+              data: {
+                companyId: company.id,
+                contactName,
+                orderDate: validDate,
+                notes: input.notes,
+                kind: OrderKind.SUPPLEMENT,
+                items: {
+                  create: toItems(input.quantities),
+                },
+              },
+              include: { company: true, items: true },
+            });
+          } else {
+            throw err;
+          }
         }
-        throw err;
       }
     }
     await db.orderActivity.create({
@@ -326,7 +373,7 @@ export async function POST(request: Request) {
             ? ORDER_ACTIVITY_TYPES.ADMIN_MANUAL_UPSERT
             : ORDER_ACTIVITY_TYPES.ORDER_CREATED
           : ORDER_ACTIVITY_TYPES.ORDER_CREATED,
-        meta: { kind: order.kind },
+        meta: { kind: order.kind, ...(autoSupplement ? { autoSupplement: true } : {}) },
       },
     });
 

@@ -1,64 +1,77 @@
 import { ItemCategory } from "@prisma/client";
 import { ALL_CATEGORIES } from "@/lib/categories";
 import {
-  distributeShiftTarget,
   emptyFormQuantities,
-  emptyShiftQuantities,
   type FormQuantities,
 } from "@/lib/order-form";
 
-/** Sipariş amaçlı metin üst sınırı (not alanı ile uyumlu) */
 export const QUICK_ORDER_TEXT_MAX = 2000;
 
 export type ShiftKeyQuick = "morning" | "evening" | "night";
 
 export type QuickOrderParseResult = {
   quantities: FormQuantities;
-  /** Kaç adet sayı satıra işlendi */
   appliedTokens: number;
-  /** Anlaşılamayan parça özetleri (çökmez; kullanıcı manuel girer) */
   skippedHints: string[];
 };
 
-function padWords(s: string): string {
-  return ` ${s.toLocaleLowerCase("tr-TR").replace(/\s+/g, " ").trim()} `;
+const SHIFT_WORDS: Record<string, ShiftKeyQuick> = {
+  sabah: "morning",
+  akşam: "evening",
+  aksam: "evening",
+  gece: "night",
+};
+
+const SINGLE_CATEGORY_WORDS: Record<string, ItemCategory> = {
+  kumanya: "KUMANYA",
+  yemek: "OGLEN_YEMEGI",
+  öğün: "OGLEN_YEMEGI",
+  ogun: "OGLEN_YEMEGI",
+  öğle: "OGLEN_YEMEGI",
+  ogle: "OGLEN_YEMEGI",
+  öğlen: "OGLEN_YEMEGI",
+  oglen: "OGLEN_YEMEGI",
+  ekmek: "DUZ_EKMEK",
+};
+
+const TWO_WORD_CATEGORIES: Array<{ words: [string, string]; category: ItemCategory }> = [
+  { words: ["ekmek", "arası"], category: "EKMEK_ARASI" },
+  { words: ["ekmek", "arasi"], category: "EKMEK_ARASI" },
+  { words: ["düz", "ekmek"], category: "DUZ_EKMEK" },
+  { words: ["duz", "ekmek"], category: "DUZ_EKMEK" },
+];
+
+function normalize(raw: string): string {
+  return raw
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[.,;:!?]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function detectShiftExplicit(padded: string): ShiftKeyQuick | null {
-  if (padded.includes(" akşam ") || padded.includes(" aksam ")) return "evening";
-  if (padded.includes(" gece ")) return "night";
-  if (padded.includes(" sabah ")) return "morning";
-  return null;
+function tokenize(text: string): string[] {
+  return normalize(text).split(" ").filter(Boolean);
 }
 
-/** Kumanya / yemek / ekmek — null ise vardiya toplamı (öğüne dağıtılır) */
-function detectCategory(padded: string): ItemCategory | null {
-  if (padded.includes(" kumanya ")) return "KUMANYA";
-  if (padded.includes(" düz ekmek ") || padded.includes(" duz ekmek ")) return "DUZ_EKMEK";
-  if (padded.includes(" ekmek arası ") || padded.includes(" ekmek arasi ")) return "EKMEK_ARASI";
-  if (padded.includes(" ekmek ") && !padded.includes(" yemek ")) return "EKMEK_ARASI";
-  if (
-    padded.includes(" yemek ") ||
-    padded.includes(" öğün ") ||
-    padded.includes(" öğle ") ||
-    padded.includes(" öğlen ") ||
-    padded.includes(" ogun ") ||
-    padded.includes(" ogle ")
-  ) {
-    return "OGLEN_YEMEGI";
+function flushPending(
+  quantities: FormQuantities,
+  shift: ShiftKeyQuick,
+  pending: number | null,
+  category: ItemCategory | null,
+): number {
+  if (pending === null || pending <= 0) return 0;
+  if (category) {
+    quantities[shift][category] += pending;
+    return 1;
   }
-  return null;
-}
-
-function mergeShiftRow(target: Record<ItemCategory, number>, addition: Record<ItemCategory, number>) {
   for (const c of ALL_CATEGORIES) {
-    target[c] += addition[c] ?? 0;
+    quantities[shift][c] += pending;
   }
+  return 1;
 }
 
 /**
- * WhatsApp tarzı metinden adet çıkarır. Kurallar bilinçli olarak dar tutuldu;
- * anlaşılmayan satırlar atlanır (skippedHints), form çökmez.
+ * Doğal dil hızlı sipariş: "sabah 20 yemek akşam 20 yemek" — virgül gerekmez.
  */
 export function parseQuickOrderText(raw: string): QuickOrderParseResult {
   const skippedHints: string[] = [];
@@ -70,47 +83,69 @@ export function parseQuickOrderText(raw: string): QuickOrderParseResult {
     return { quantities, appliedTokens: 0, skippedHints };
   }
 
-  const clauses = text.split(/[\n.;]+/).map((c) => c.trim()).filter(Boolean);
+  const tokens = tokenize(text);
+  let shift: ShiftKeyQuick = "morning";
+  let pending: number | null = null;
+  let pendingCategory: ItemCategory | null = null;
 
-  for (const clause of clauses) {
-    const nums = [...clause.matchAll(/(\d+)/g)];
-    if (nums.length === 0) {
-      skippedHints.push(clause.length > 40 ? `${clause.slice(0, 37)}…` : clause);
-      continue;
-    }
+  const pushPending = () => {
+    appliedTokens += flushPending(quantities, shift, pending, pendingCategory);
+    pending = null;
+    pendingCategory = null;
+  };
 
-    let inheritedShift: ShiftKeyQuick = "morning";
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i];
+    const next = tokens[i + 1];
 
-    for (let i = 0; i < nums.length; i += 1) {
-      const m = nums[i];
-      const n = parseInt(m[1], 10);
+    if (/^\d+$/.test(t)) {
+      const n = parseInt(t, 10);
       if (!Number.isFinite(n) || n < 0 || n > 50_000) {
         skippedHints.push("Geçersiz sayı");
         continue;
       }
+      pushPending();
+      pending = n;
+      continue;
+    }
 
-      const prevEnd = i > 0 ? (nums[i - 1].index ?? 0) + nums[i - 1][1].length : 0;
-      const nextStart =
-        i < nums.length - 1 ? (nums[i + 1].index ?? clause.length) : clause.length;
-      const ctx = clause.slice(prevEnd, nextStart);
-      const padded = padWords(ctx);
+    const shiftHit = SHIFT_WORDS[t];
+    if (shiftHit) {
+      pushPending();
+      shift = shiftHit;
+      continue;
+    }
 
-      const explicitShift = detectShiftExplicit(padded);
-      const shift = explicitShift ?? inheritedShift;
-      if (explicitShift) inheritedShift = explicitShift;
+    const twoKey = next ? `${t} ${next}` : "";
+    const twoMatch = TWO_WORD_CATEGORIES.find(
+      (entry) => entry.words[0] === t && entry.words[1] === next,
+    );
+    if (twoMatch) {
+      pushPending();
+      pendingCategory = twoMatch.category;
+      i += 1;
+      continue;
+    }
 
-      const cat = detectCategory(padded);
-
-      if (cat) {
-        quantities[shift][cat] += n;
-        appliedTokens += 1;
-      } else {
-        const row = distributeShiftTarget(emptyShiftQuantities(), n);
-        mergeShiftRow(quantities[shift], row);
-        appliedTokens += 1;
+    const cat = SINGLE_CATEGORY_WORDS[t];
+    if (cat) {
+      if (t === "ekmek" && next === "arası") {
+        pushPending();
+        pendingCategory = "EKMEK_ARASI";
+        i += 1;
+        continue;
       }
+      pushPending();
+      pendingCategory = cat;
+      continue;
+    }
+
+    if (t.length > 1) {
+      skippedHints.push(t);
     }
   }
+
+  pushPending();
 
   return { quantities, appliedTokens, skippedHints };
 }

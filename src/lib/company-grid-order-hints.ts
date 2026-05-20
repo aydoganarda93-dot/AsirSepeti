@@ -13,9 +13,9 @@ export type CompanyOrderGridHints = {
   oglenEkmekOrderLine: string | null;
   /** Akşam adet altı: akşam yemek + akşam kumanya */
   aksamOrderLine: string | null;
-  /** Akşam ekmek altı: akşam/gece ekmek arası + düz ekmek */
+  /** Akşam ekmek altı: yalnızca akşam vardiyası ekmek */
   aksamEkmekOrderLine: string | null;
-  /** Kumanya sütunu: gece yemek + tüm vardiya kumanya */
+  /** Kumanya sütunu: gece yemek + gece kumanya/ekmek (örn. "4+4 ekmek") + gündüz kumanya */
   kumanyaOrderLine: string | null;
 };
 
@@ -28,14 +28,34 @@ function formatYemekPlusKum(yemek: number, kum: number): string | null {
   return `${k} kum`;
 }
 
-/** Kumanya sütunu: gece yemeği (grid mantığı) + saf kumanya kalemleri */
-function formatKumanyaColumn(nightYemek: number, pureKumanya: number): string | null {
+/** Gece vardiyası: kumanya + ekmek → "4+4 ekmek"; yalnız ekmek → "+4 ekmek" */
+function formatGeceKumanyaPlusEkmek(nightKum: number, nightEkmek: number): string | null {
+  const k = Math.max(0, Math.floor(nightKum));
+  const e = Math.max(0, Math.floor(nightEkmek));
+  if (k <= 0 && e <= 0) return null;
+  if (k > 0 && e > 0) return `${k}+${e} ekmek`;
+  if (e > 0) return `+${e} ekmek`;
+  return `${k} kum`;
+}
+
+/** Kumanya sütunu ipucu: gece yemek, gece kum+ekmek, sabah/akşam saf kumanya */
+function formatKumanyaColumn(
+  nightYemek: number,
+  nightKum: number,
+  nightEkmek: number,
+  dayKumanya: number,
+): string | null {
+  const parts: string[] = [];
   const ny = Math.max(0, Math.floor(nightYemek));
-  const pk = Math.max(0, Math.floor(pureKumanya));
-  if (ny <= 0 && pk <= 0) return null;
-  if (ny > 0 && pk > 0) return `${ny} + ${pk} kum`;
-  if (ny > 0) return String(ny);
-  return `${pk} kum`;
+  if (ny > 0) parts.push(String(ny));
+
+  const gecePart = formatGeceKumanyaPlusEkmek(nightKum, nightEkmek);
+  if (gecePart) parts.push(gecePart);
+
+  const dk = Math.max(0, Math.floor(dayKumanya));
+  if (dk > 0) parts.push(`${dk} kum`);
+
+  return parts.length > 0 ? parts.join(" ") : null;
 }
 
 function formatEkmekColumn(ekmekArasi: number, duzEkmek: number): string | null {
@@ -82,14 +102,15 @@ export function computeCompanyOrderGridHints(items: OrderItemForHint[]): Company
     }
   }
 
-  const pureKumanyaTotal = morningKum + eveningKum + nightKum;
+  const nightEkmekTotal = nightEkmekArasi + nightDuzEkmek;
+  const dayKumanya = morningKum + eveningKum;
 
   return {
     oglenOrderLine: formatYemekPlusKum(morningYemek, morningKum),
     oglenEkmekOrderLine: formatEkmekColumn(morningEkmekArasi, morningDuzEkmek),
     aksamOrderLine: formatYemekPlusKum(eveningYemek, eveningKum),
-    aksamEkmekOrderLine: formatEkmekColumn(eveningEkmekArasi + nightEkmekArasi, eveningDuzEkmek + nightDuzEkmek),
-    kumanyaOrderLine: formatKumanyaColumn(nightYemek, pureKumanyaTotal),
+    aksamEkmekOrderLine: formatEkmekColumn(eveningEkmekArasi, eveningDuzEkmek),
+    kumanyaOrderLine: formatKumanyaColumn(nightYemek, nightKum, nightEkmekTotal, dayKumanya),
   };
 }
 
