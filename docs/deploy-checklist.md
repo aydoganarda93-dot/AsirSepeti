@@ -113,7 +113,7 @@ boot'ta `[env]` uyarısı olarak Vercel function log'larına yazılır
 | Değişken | Zorunluluk | Format / örnek | Doğrulama notu |
 |----------|-----------|----------------|----------------|
 | `DATABASE_URL` | Zorunlu | `postgresql://...pooler...:6543/postgres?pgbouncer=true&sslmode=require` | Port **6543**, `pgbouncer=true` şart. |
-| `DIRECT_URL` | Önerilen | `postgresql://postgres:...@db.<ref>.supabase.co:5432/postgres?sslmode=require` | Migration için (port **5432**). |
+| `DIRECT_URL` | Önerilen | `postgresql://postgres.<ref>:...@aws-*-*.pooler.supabase.com:5432/postgres?sslmode=require` | **Session pooler** (5432). `db.<ref>.supabase.co` yalnızca IPv6; Windows’ta P1001. |
 | `NEXTAUTH_SECRET` | Zorunlu | `openssl rand -base64 32` | En az 16 karakter; üretim ≠ development. |
 | `NEXTAUTH_URL` | **Production'da zorunlu** | `https://asir-sepeti.vercel.app` | **Başında `https://`** olmalı, sonunda `/` olmamalı. Yalnız host yazmak (örn. `asir-sepeti.vercel.app`) callback'i kırar. |
 | `ADMIN_EMAIL` | Zorunlu | `admin@asirsepeti.com` | `npm run db:seed` bunu kullanır. |
