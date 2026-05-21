@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Edit2, FileSpreadsheet, Plus, Save } from "lucide-react";
+import { Edit2, FileSpreadsheet, Plus, Printer, Save } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -17,6 +17,7 @@ import {
   type CompanyGridPayload,
 } from "@/lib/company-admin-grid";
 import type { CompanyOrderGridHints } from "@/lib/company-grid-order-hints";
+import { downloadMealLabelsXlsx, type MealLabelKind } from "@/lib/company-grid-label-export";
 import { formatUtcYmdFromOffset } from "@/lib/date";
 import {
   AlertDialog,
@@ -634,6 +635,32 @@ export default function AdminCompaniesPage() {
     toast.success("Excel dosyası indirildi.");
   }
 
+  async function exportMealLabels(meal: MealLabelKind) {
+    const source = search.trim() ? visibleRows : displayRows;
+    const label = meal === "oglen" ? "Öğle" : "Akşam";
+    const patchedMealFields: Record<string, Partial<Record<MealLabelKind, boolean>>> = {};
+    for (const [rowId, patch] of Object.entries(patchById)) {
+      if (patch?.oglen !== undefined) {
+        patchedMealFields[rowId] = { ...patchedMealFields[rowId], oglen: true };
+      }
+      if (patch?.aksam !== undefined) {
+        patchedMealFields[rowId] = { ...patchedMealFields[rowId], aksam: true };
+      }
+    }
+    try {
+      const { count, filename } = await downloadMealLabelsXlsx({
+        rows: source,
+        meal,
+        dateYmd: effectiveViewYmd || formatUtcYmdFromOffset(0),
+        orderHintsByCompany,
+        patchedMealFields,
+      });
+      toast.success(`${label}: ${count} işletme — ${filename} indirildi.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `${label} etiket indirilemedi.`);
+    }
+  }
+
   async function deleteCompanyRow(id: string) {
     try {
       const target = rows.find((row) => row.id === id);
@@ -795,13 +822,25 @@ export default function AdminCompaniesPage() {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 gap-1 px-2.5 text-xs text-slate-700"
-              onClick={() => exportToExcel(true)}
-              disabled={visibleRows.length === 0}
-              title="Filtrelenmiş Excel"
+              className="h-8 gap-1 px-2.5 text-xs text-amber-900 hover:bg-amber-50"
+              onClick={() => void exportMealLabels("oglen")}
+              disabled={displayRows.length === 0}
+              title="Öğle yemek etiketi (5 fabrika yan yana, yalnızca adet)"
             >
-              <Download className="h-3.5 w-3.5" />
-              Filtre
+              <Printer className="h-3.5 w-3.5" />
+              Öğle etiket
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 px-2.5 text-xs text-indigo-900 hover:bg-indigo-50"
+              onClick={() => void exportMealLabels("aksam")}
+              disabled={displayRows.length === 0}
+              title="Akşam yemek etiketi (5 fabrika yan yana, yalnızca adet)"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Akşam etiket
             </Button>
           </div>
         </div>
